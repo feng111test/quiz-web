@@ -27,7 +27,14 @@ export function normalizeVisionAnswer(raw, type) {
 }
 
 export function toVisionQuestion(item, pageNumber) {
-  const type = item?.type === "multiple" ? "multiple" : item?.type === "judge" ? "judge" : "single";
+  const type =
+    item?.type === "multiple"
+      ? "multiple"
+      : item?.type === "judge"
+        ? "judge"
+        : item?.type === "subjective"
+          ? "subjective"
+          : "single";
   const options = (Array.isArray(item?.options) ? item.options : [])
     .map((option, index) => {
       const rawKey = String(option?.key ?? "").trim().toUpperCase();

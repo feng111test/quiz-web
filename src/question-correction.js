@@ -52,6 +52,12 @@ export function clearCorrection(uid) {
   saveCorrection(uid, null);
 }
 
+/** 统计某个题库下已校正的题目数量（题库未加载题目时也能统计） */
+export function countCorrectionsFor(bankId) {
+  const prefix = `${bankId}::`;
+  return Object.keys(readAll()).filter((uid) => uid.startsWith(prefix)).length;
+}
+
 function optionImages(question, key) {
   const matched = question.options.find((option) => option.key === key);
   return matched ? matched.formulaImages || [] : [];
@@ -77,6 +83,8 @@ export function applyCorrections(questions) {
       title: typeof patch.title === "string" ? patch.title : question.title,
       options,
       answer: Array.isArray(patch.answer) && patch.answer.length ? [...patch.answer] : question.answer,
+      // 主观题的答案是一整段文字，单独存一个字段
+      answerText: typeof patch.answerText === "string" ? patch.answerText : question.answerText ?? "",
       explanation: typeof patch.explanation === "string" ? patch.explanation : question.explanation,
       corrected: true,
     };

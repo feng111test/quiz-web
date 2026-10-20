@@ -149,11 +149,26 @@ button { color: inherit; }
 .formula-inline { display: inline-block; max-width: min(180px, 45vw); max-height: 2.2em; margin: 0 3px; vertical-align: middle; }
 .formula-missing { display: inline-block; padding: 1px 5px; border-radius: 4px; color: #96632d; background: #fff4df; font-size: .9em; }
 
+/* 主观题作答 */
+.q-options.subjective { gap: 0; }
+.q-subjective { display: grid; gap: 8px; margin-top: 16px; }
+.subjective-label { color: #5c8070; font-size: 11px; font-weight: 700; }
+.subjective-input { width: 100%; box-sizing: border-box; padding: 12px 13px; border: 1px solid #e7eceb; border-radius: 8px; color: #2f3d38; background: #fff; font-family: inherit; font-size: 12px; line-height: 1.75; resize: vertical; }
+.subjective-input:focus { outline: none; border-color: #8fbfa6; box-shadow: 0 0 0 3px #6ba3891f; }
+.subjective-input:disabled { color: #7b8983; background: #f7f9f8; }
+.subjective-hint { margin: 0; color: #93a29b; font-size: 10px; line-height: 1.6; }
+
 .q-feedback { margin-top: 18px; padding: 15px; border-radius: 8px; }
 .q-feedback.correct { color: #39754f; background: #f0f8f2; }
 .q-feedback.wrong { color: #936357; background: #fff5f1; }
+.q-feedback.pending { color: #4d6b5c; background: #f4f8f6; border: 1px solid #dfeae4; }
 .feedback-heading { margin-bottom: 7px; font-size: 13px; font-weight: 700; }
 .feedback-answer { font-size: 11px; }
+.feedback-block { margin-top: 11px; }
+.feedback-block strong { display: block; margin-bottom: 4px; color: #5c8070; font-size: 10px; }
+.feedback-block p { margin: 0; color: #596963; font-size: 11px; line-height: 1.85; white-space: pre-wrap; }
+.feedback-empty { color: #a08a84; }
+.feedback-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 .feedback-explanation { margin-top: 12px; padding-top: 11px; border-top: 1px solid #00000012; }
 .feedback-explanation strong { font-size: 10px; }
 .feedback-explanation p { margin: 5px 0 0; color: #596963; font-size: 11px; line-height: 1.85; white-space: pre-wrap; }
@@ -169,6 +184,16 @@ button { color: inherit; }
 
 /* 校正面板 */
 .correct-view { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; padding: 4vh 4vw; background: #16241f80; }
+.correct-layout { display: grid; grid-template-columns: minmax(0, 420px) minmax(0, 680px); gap: 20px; width: min(1140px, 100%); max-height: 92vh; align-items: start; }
+.correct-preview { display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 12px; background: #fff; box-shadow: 0 18px 45px #16241f2e; max-height: 92vh; overflow: hidden; }
+.preview-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.preview-header .option-label { margin: 0; }
+.page-info { color: var(--muted); font-size: 11px; }
+.pdf-preview-container { flex: 1; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; background: #f8fafa; min-height: 300px; display: flex; align-items: center; justify-content: center; }
+.pdf-preview-container img { max-width: 100%; height: auto; display: block; }
+.preview-placeholder { text-align: center; padding: 40px 20px; color: var(--muted); }
+.preview-placeholder p { margin: 8px 0; font-size: 13px; }
+.preview-hint { font-size: 11px; color: #9aa7a8; }
 .correct-panel { width: min(680px, 100%); max-height: 92vh; overflow-y: auto; padding: 20px 22px; border-radius: 12px; background: #fff; box-shadow: 0 18px 45px #16241f2e; }
 .correct-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; margin-bottom: 16px; }
 .correct-head h2 { margin: 0; color: var(--ink); font-size: 16px; font-weight: 650; }
@@ -198,6 +223,8 @@ html.embedded .practice-view, html.embedded .setup-view { padding-top: 20px; }
   .option-panel { position: static; }
   .practice-layout { grid-template-columns: minmax(0, 1fr); }
   .nav-grid { position: static; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); max-height: 190px; }
+  .correct-layout { grid-template-columns: minmax(0, 1fr); }
+  .correct-preview { max-height: 50vh; }
 }
 
 @media (max-width: 620px) {

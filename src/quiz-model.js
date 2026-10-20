@@ -6,6 +6,8 @@ const JUDGE_OPTIONS = [
 ];
 const JUDGE_TRUE_KEYS = ["A", "正确", "对", "√", "T"];
 const JUDGE_FALSE_KEYS = ["B", "错误", "错", "×", "X", "F"];
+/** 与小程序一致：填空、简答、计算、实验、推断、材料题统一归到 subjective */
+export const QUESTION_TYPES = ["single", "multiple", "judge", "subjective"];
 
 function toText(value) {
   return String(value ?? "").trim();
@@ -14,6 +16,23 @@ function toText(value) {
 function normalizeKeys(value) {
   const items = Array.isArray(value) ? value : String(value ?? "").split(/[,，、\s]+/);
   return [...new Set(items.map((item) => toText(item).toUpperCase()).filter(Boolean))];
+}
+
+/** 主观题的参考答案是一整段文字（小程序里存成 answer: ["整段文字"]） */
+function toAnswerText(value) {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => toText(item))
+      .filter(Boolean)
+      .join("\n")
+      .trim();
+  }
+  return toText(value);
+}
+
+function resolveType(raw) {
+  const rawType = toText(raw?.type).toLowerCase();
+  return QUESTION_TYPES.includes(rawType) ? rawType : "single";
 }
 
 function imageSrc(image) {
@@ -35,6 +54,9 @@ function splitTitleImages(title, images) {
 
 function fromWord(raw, bank, index) {
   const id = toText(raw?.id) || `word-${index + 1}`;
+  const type = resolveType(raw);
+  const answerText = type === "subjective" ? toAnswerText(raw?.answer ?? raw?.answerText) : "";
+  const answer = type === "subjective" ? [] : normalizeKeys(raw?.answer);
   const options = (Array.isArray(raw?.options) ? raw.options : [])
     .map((option) => ({
       key: toText(option?.key),
@@ -43,11 +65,13 @@ function fromWord(raw, bank, index) {
     }))
     .filter((option) => option.content);
 
-  const answer = normalizeKeys(raw?.answer);
-  if (!answer.length || options.length < 2) return null;
-
   const title = toText(raw?.title ?? raw?.stem);
   if (!title) return null;
+  if (type === "subjective") {
+    if (!answerText) return null;
+  } else if (!answer.length || options.length < 2) {
+    return null;
+  }
 
   const titleImages = readImages(raw?.titleImages);
   const { inline, figures } = splitTitleImages(title, titleImages);
@@ -58,12 +82,13 @@ function fromWord(raw, bank, index) {
     bankId: bank.id,
     bankName: bank.name,
     source: "word",
-    type: raw?.type === "multiple" || answer.length > 1 ? "multiple" : "single",
+    type: type === "subjective" ? "subjective" : answer.length > 1 ? "multiple" : type,
     title,
     titleImages: inline,
     images: [...figures, ...readImages(raw?.tableImage ? [raw.tableImage] : [])],
-    options,
+    options: type === "subjective" ? [] : options,
     answer,
+    answerText,
     explanation: toText(raw?.explanation),
     explanationImages: readImages(raw?.explanationImages),
     sourcePage: 0,
@@ -72,12 +97,13 @@ function fromWord(raw, bank, index) {
 
 function fromPdf(raw, bank, index) {
   const id = toText(raw?.id) || `pdf-${index + 1}`;
-  const type = raw?.type === "multiple" ? "multiple" : raw?.type === "judge" ? "judge" : "single";
+  const type = resolveType(raw);
+  const answerText = type === "subjective" ? toAnswerText(raw?.answer ?? raw?.answerText) : "";
   const rawOptions = (Array.isArray(raw?.options) ? raw.options : [])
     .map((option) => ({ key: toText(option?.key), content: toText(option?.content ?? option?.text) }))
     .filter((option) => option.content);
 
-  let keys = normalizeKeys(raw?.answer);
+  let keys = type === "subjective" ? [] : normalizeKeys(raw?.answer);
   if (type === "judge") {
     keys = keys
       .map((key) =>
@@ -89,13 +115,17 @@ function fromPdf(raw, bank, index) {
       )
       .filter((key) => key === "正确" || key === "错误");
   }
-  if (!keys.length) return null;
 
   const title = toText(raw?.title ?? raw?.stem);
   if (!title) return null;
+  if (type === "subjective") {
+    if (!answerText) return null;
+  } else {
+    if (!keys.length) return null;
+    if ((type === "judge" ? JUDGE_OPTIONS : rawOptions).length < 2) return null;
+  }
 
-  const options = type === "judge" ? JUDGE_OPTIONS : rawOptions;
-  if (options.length < 2) return null;
+  const options = type === "judge" ? JUDGE_OPTIONS : type === "subjective" ? [] : rawOptions;
 
   return {
     uid: `${bank.id}::${id}`,
@@ -109,6 +139,7 @@ function fromPdf(raw, bank, index) {
     images: readImages(raw?.images),
     options: options.map((option) => ({ ...option, formulaImages: [] })),
     answer: keys,
+    answerText,
     explanation: toText(raw?.explanation),
     explanationImages: [],
     sourcePage: Number(raw?.sourcePage) || 0,
@@ -117,8 +148,9 @@ function fromPdf(raw, bank, index) {
 
 function fromBuiltin(raw, bank, index) {
   const id = toText(raw?.id) || `builtin-${index + 1}`;
-  const type = raw?.type === "multiple" ? "multiple" : raw?.type === "judge" ? "judge" : "single";
-  const answer = normalizeKeys(raw?.answer);
+  const type = resolveType(raw);
+  const answerText = type === "subjective" ? toAnswerText(raw?.answer ?? raw?.answerText) : "";
+  const answer = type === "subjective" ? [] : normalizeKeys(raw?.answer);
   const title = toText(raw?.title ?? raw?.stem);
   const rawOptions = (Array.isArray(raw?.options) ? raw.options : [])
     .map((option) => ({
@@ -128,9 +160,13 @@ function fromBuiltin(raw, bank, index) {
     }))
     .filter((option) => option.content);
 
-  if (!title || !answer.length) return null;
-  const options = type === "judge" ? JUDGE_OPTIONS : rawOptions;
-  if (options.length < 2) return null;
+  if (!title) return null;
+  const options = type === "judge" ? JUDGE_OPTIONS : type === "subjective" ? [] : rawOptions;
+  if (type === "subjective") {
+    if (!answerText) return null;
+  } else if (!answer.length || options.length < 2) {
+    return null;
+  }
 
   const { inline, figures } = splitTitleImages(title, readImages(raw?.titleImages));
   return {
@@ -145,6 +181,7 @@ function fromBuiltin(raw, bank, index) {
     images: [...readImages(raw?.images), ...figures, ...readImages(raw?.tableImage ? [raw.tableImage] : [])],
     options: options.map((option) => ({ ...option, formulaImages: option.formulaImages || [] })),
     answer,
+    answerText,
     explanation: toText(raw?.explanation),
     explanationImages: readImages(raw?.explanationImages),
     sourcePage: Number(raw?.sourcePage) || 0,

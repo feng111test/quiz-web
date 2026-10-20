@@ -28,25 +28,46 @@ function normalizeAnswer(value) {
   return [...new Set(cleaned)];
 }
 
+/** 主观题的参考答案是一整段文字，不能按选项标号切分 */
+function normalizeAnswerText(value) {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => String(item ?? "").trim())
+      .filter(Boolean)
+      .join("\n");
+  }
+  return String(value ?? "").trim();
+}
+
 function toCanonicalQuestion(raw, index) {
   if (!raw || typeof raw !== "object") return null;
+  const subjective = String(raw.type ?? "").trim() === "subjective";
   const rawOptions = Array.isArray(raw.options) ? raw.options : [];
   const options = rawOptions.map((option, optionIndex) => ({
     key: String(option?.key ?? optionKey(optionIndex)).trim() || optionKey(optionIndex),
     content: String(option?.content ?? option?.text ?? "").trim(),
     formulaImages: readImages(option?.formulaImages),
   }));
-  const answer = normalizeAnswer(raw.answer);
+  const answer = subjective ? [] : normalizeAnswer(raw.answer);
+  const answerText = subjective ? normalizeAnswerText(raw.answer ?? raw.answerText) : "";
   const title = String(raw.title ?? raw.stem ?? "").trim();
-  if (!title && !options.length) return null;
+  if (!title && !options.length && !answerText) return null;
+  const type = subjective
+    ? "subjective"
+    : ["single", "multiple", "judge"].includes(raw.type)
+      ? raw.type
+      : answer.length > 1
+        ? "multiple"
+        : "single";
   return {
     id: typeof raw.id === "string" && raw.id ? raw.id : `imported-${index + 1}`,
-    type: ["single", "multiple", "judge"].includes(raw.type) ? raw.type : answer.length > 1 ? "multiple" : "single",
+    type,
     title: title || "未填写题干",
     sourcePage: Number.isInteger(Number(raw.sourcePage)) && Number(raw.sourcePage) > 0 ? Number(raw.sourcePage) : undefined,
     reviewed: Boolean(raw.reviewed),
-    options,
+    options: subjective ? [] : options,
     answer,
+    answerText,
     explanation: String(raw.explanation ?? "").trim(),
     images: readImages(raw.images),
     explanationImages: readImages(raw.explanationImages),
@@ -106,9 +127,12 @@ export async function readBankFile(file) {
 export function toWordQuestions(questions) {
   return questions.map((question, index) => {
     const isJudge = question.type === "judge";
-    const answer = isJudge
-      ? [...question.answer].map((key) => (key === "A" ? "正确" : key === "B" ? "错误" : key))
-      : [...question.answer];
+    const isSubjective = question.type === "subjective";
+    const answer = isSubjective
+      ? [question.answerText || ""]
+      : isJudge
+        ? [...question.answer].map((key) => (key === "A" ? "正确" : key === "B" ? "错误" : key))
+        : [...question.answer];
     return {
       id: question.id,
       number: index + 1,
@@ -118,13 +142,15 @@ export function toWordQuestions(questions) {
             { key: "正确", content: "正确", formulaImages: [] },
             { key: "错误", content: "错误", formulaImages: [] },
           ]
-        : question.options.map((option) => ({
-            key: option.key,
-            content: option.content,
-            formulaImages: option.formulaImages.map((image) => ({ src: image.dataUrl })),
-          })),
+        : isSubjective
+          ? []
+          : question.options.map((option) => ({
+              key: option.key,
+              content: option.content,
+              formulaImages: option.formulaImages.map((image) => ({ src: image.dataUrl })),
+            })),
       answer: answer.sort(),
-      type: question.type === "multiple" ? "multiple" : "single",
+      type: isSubjective ? "subjective" : question.type === "multiple" ? "multiple" : "single",
       explanation: question.explanation,
       explanationImages: question.explanationImages.map((image) => ({ src: image.dataUrl })),
       titleImages: [...question.images, ...question.titleImages].map((image) => ({ src: image.dataUrl })),
@@ -142,7 +168,7 @@ export function toPdfQuestions(questions) {
     sourcePage: question.sourcePage,
     reviewed: question.reviewed,
     options: question.options.map((option) => ({ key: option.key, content: option.content })),
-    answer: question.answer.join(","),
+    answer: question.type === "subjective" ? question.answerText || "" : question.answer.join(","),
     explanation: question.explanation,
     images: [
       ...question.images,
