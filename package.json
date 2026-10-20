@@ -5,17 +5,15 @@
   "type": "module",
   "description": "题库刷题网页版：内置 2026 高考化学真题，支持题目校正，可单独发布",
   "scripts": {
-    "dev": "node scripts/prepare-default-bank.mjs && node pdf-question-importer/scripts/prepare-assets.js && vite --host 127.0.0.1",
-    "build": "node scripts/prepare-default-bank.mjs && node pdf-question-importer/scripts/prepare-assets.js && vite build",
+    "dev": "node scripts/prepare-default-bank.mjs && vite --host 127.0.0.1",
+    "build": "node scripts/prepare-default-bank.mjs && vite build",
     "build:quiz": "node scripts/prepare-default-bank.mjs && vite build --config vite.quiz.config.js",
     "preview:quiz": "vite preview --config vite.quiz.config.js --outDir dist-quiz --host 127.0.0.1"
   },
   "dependencies": {
     "@napi-rs/canvas": "0.1.100",
-    "@tesseract.js-data/chi_sim": "1.0.0",
     "jszip": "3.10.1",
-    "pdfjs-dist": "5.4.624",
-    "tesseract.js": "6.0.1"
+    "pdfjs-dist": "5.4.624"
   },
   "devDependencies": {
     "vite": "7.2.2"

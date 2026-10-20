@@ -3,27 +3,20 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="本地导入 Word 试卷刷题，或整理 PDF 题目后直接练习。" />
-    <title>试卷学习工作台 · 本地使用</title>
+    <meta name="description" content="在线题库刷题，内置 2026 高考化学真题，支持题目校正。" />
+    <title>题库刷题 · 试卷学习工作台</title>
     <link rel="stylesheet" href="/workspace.css" />
   </head>
   <body>
     <header class="workspace-header">
-      <a class="brand" href="/" aria-label="试卷学习工作台">
+      <a class="brand" href="/" aria-label="题库刷题">
         <span class="brand-mark">学</span>
-        <span><strong>试卷学习工作台</strong><small>题库本机保存 · 打开即练</small></span>
+        <span><strong>题库刷题</strong><small>题库本机保存 · 打开即练</small></span>
       </a>
-      <nav class="mode-switch" aria-label="工作模式">
-        <button class="mode-button active" type="button" data-mode="quiz">题库刷题</button>
-        <button class="mode-button" type="button" data-mode="word">Word 导入</button>
-        <button class="mode-button" type="button" data-mode="pdf">PDF 整理</button>
-      </nav>
       <span class="privacy-indicator"><span></span>题库已永久保存</span>
     </header>
     <main class="app-area">
       <iframe id="quiz-app" class="app-frame active" title="题库刷题" src="/quiz/index.html?embedded=1"></iframe>
-      <iframe id="word-app" class="app-frame" title="Word 试卷刷题" src="/word-quiz/index.html?embedded=1"></iframe>
-      <iframe id="pdf-app" class="app-frame" title="PDF 题目整理与刷题" src="/pdf-question-importer/index.html?embedded=1"></iframe>
     </main>
     <script type="module" src="/workspace.js"></script>
   </body>

@@ -169,47 +169,61 @@
       </section>
 
       <section id="correctView" class="correct-view" hidden>
-        <div class="correct-panel">
-          <header class="correct-head">
-            <div>
-              <p class="section-eyebrow">REVIEW QUESTION</p>
-              <h2 id="correctHeading">校正本题</h2>
+        <div class="correct-layout">
+          <aside class="correct-preview">
+            <div class="preview-header">
+              <span class="option-label">原卷预览</span>
+              <span id="pdfPageInfo" class="page-info"></span>
             </div>
-            <button id="correctClose" class="text-button" type="button">关闭</button>
-          </header>
-
-          <div class="correct-field">
-            <span class="option-label">题型</span>
-            <select id="correctType" class="correct-select">
-              <option value="single">单选题</option>
-              <option value="multiple">多选题</option>
-              <option value="judge">判断题</option>
-            </select>
-          </div>
-
-          <div class="correct-field">
-            <span class="option-label">题干</span>
-            <textarea id="correctTitle" class="correct-textarea" rows="4"></textarea>
-          </div>
-
-          <div class="correct-field">
-            <span class="option-label">选项（勾选“正确”即为答案）</span>
-            <div id="correctOptions" class="correct-options"></div>
-            <button id="correctAddOption" class="text-button" type="button">＋ 增加选项</button>
-          </div>
-
-          <div class="correct-field">
-            <span class="option-label">解析</span>
-            <textarea id="correctExplanation" class="correct-textarea" rows="4"></textarea>
-          </div>
-
-          <footer class="correct-actions">
-            <button id="correctReset" class="button button-quiet" type="button">恢复原题</button>
-            <div class="correct-actions-right">
-              <button id="correctCancel" class="button button-quiet" type="button">取消</button>
-              <button id="correctSave" class="button button-primary" type="button">保存校正</button>
+            <div id="pdfPreviewContainer" class="pdf-preview-container">
+              <div class="preview-placeholder">
+                <p>暂无原卷预览</p>
+                <p class="preview-hint">本题来源于 PDF 试卷，将在此处显示对应页面</p>
+              </div>
             </div>
-          </footer>
+          </aside>
+          <div class="correct-panel">
+            <header class="correct-head">
+              <div>
+                <p class="section-eyebrow">REVIEW QUESTION</p>
+                <h2 id="correctHeading">校正本题</h2>
+              </div>
+              <button id="correctClose" class="text-button" type="button">关闭</button>
+            </header>
+
+            <div class="correct-field">
+              <span class="option-label">题型</span>
+              <select id="correctType" class="correct-select">
+                <option value="single">单选题</option>
+                <option value="multiple">多选题</option>
+                <option value="judge">判断题</option>
+              </select>
+            </div>
+
+            <div class="correct-field">
+              <span class="option-label">题干</span>
+              <textarea id="correctTitle" class="correct-textarea" rows="4"></textarea>
+            </div>
+
+            <div class="correct-field">
+              <span class="option-label">选项（勾选“正确”即为答案）</span>
+              <div id="correctOptions" class="correct-options"></div>
+              <button id="correctAddOption" class="text-button" type="button">＋ 增加选项</button>
+            </div>
+
+            <div class="correct-field">
+              <span class="option-label">解析</span>
+              <textarea id="correctExplanation" class="correct-textarea" rows="4"></textarea>
+            </div>
+
+            <footer class="correct-actions">
+              <button id="correctReset" class="button button-quiet" type="button">恢复原题</button>
+              <div class="correct-actions-right">
+                <button id="correctCancel" class="button button-quiet" type="button">取消</button>
+                <button id="correctSave" class="button button-primary" type="button">保存校正</button>
+              </div>
+            </footer>
+          </div>
         </div>
       </section>
     </main>
