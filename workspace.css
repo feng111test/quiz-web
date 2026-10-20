@@ -1,0 +1,53 @@
+:root {
+  color: #23302e;
+  background: #f3f6f4;
+  font-family: "Segoe UI", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+* { box-sizing: border-box; }
+body { min-width: 320px; height: 100vh; margin: 0; overflow: hidden; }
+button { font: inherit; }
+
+.workspace-header {
+  position: relative;
+  z-index: 2;
+  height: 62px;
+  display: flex;
+  align-items: center;
+  gap: 30px;
+  padding: 0 25px;
+  border-bottom: 1px solid #e4ebe7;
+  background: #fff;
+}
+
+.brand { display: flex; align-items: center; gap: 9px; color: inherit; text-decoration: none; white-space: nowrap; }
+.brand-mark { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 10px; color: #176d5c; background: #e9f4ee; font-size: 15px; font-weight: 700; }
+.brand strong, .brand small { display: block; }
+.brand strong { font-size: 12px; }
+.brand small { margin-top: 2px; color: #92a09a; font-size: 9px; }
+.mode-switch { height: 100%; display: flex; align-items: stretch; gap: 5px; }
+.mode-button { position: relative; padding: 0 16px; border: 0; color: #75817c; background: transparent; font-size: 11px; font-weight: 600; cursor: pointer; }
+.mode-button::after { position: absolute; right: 12px; bottom: 0; left: 12px; height: 2px; background: transparent; content: ""; }
+.mode-button:hover, .mode-button.active { color: #176d5c; }
+.mode-button.active::after { background: #33866b; }
+.privacy-indicator { display: flex; align-items: center; gap: 8px; margin-left: auto; color: #7f8e86; font-size: 10px; white-space: nowrap; }
+.privacy-indicator span { width: 7px; height: 7px; border-radius: 50%; background: #56a780; box-shadow: 0 0 0 4px #edf7f0; }
+.app-area { height: calc(100vh - 62px); }
+.app-frame { width: 100%; height: 100%; display: none; border: 0; background: #f3f6f4; }
+.app-frame.active { display: block; }
+
+@media (max-width: 560px) {
+  .workspace-header { height: 56px; gap: 9px; padding: 0 10px; }
+  .brand { gap: 6px; }
+  .brand-mark { width: 28px; height: 28px; font-size: 13px; }
+  .brand strong { font-size: 10px; }
+  .brand small { font-size: 8px; }
+  .mode-switch { gap: 0; margin-left: auto; }
+  .mode-button { padding: 0 8px; font-size: 9px; }
+  .mode-button::after { right: 5px; left: 5px; }
+  .privacy-indicator { display: none; }
+  .app-area { height: calc(100vh - 56px); }
+}

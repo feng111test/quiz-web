@@ -1,0 +1,46 @@
+name: deploy-quiz
+
+# 发布「题库刷题」页面（Word / PDF 导入暂不发布）
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - name: 安装依赖并打包刷题页
+        run: npm ci && npm run build:quiz
+      # 首次发布需要在仓库 Settings → Pages 里把 Source 选成 GitHub Actions；
+      # 若想让流水线自动开通 Pages，请把带 repo 权限的 PAT 存到 secrets.PAGES_TOKEN
+      - uses: actions/configure-pages@v5
+        with:
+          token: ${{ secrets.PAGES_TOKEN || github.token }}
+          enablement: true
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist-quiz
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

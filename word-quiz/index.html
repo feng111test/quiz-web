@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="在本机导入 Word 试卷，解析选择题并练习。" />
+    <title>试卷练习 · 本地刷题</title>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="#" aria-label="试卷练习">
+          <span class="brand-mark">练</span>
+          <span><strong>试卷练习</strong><small>WORD · 本地刷题</small></span>
+        </a>
+        <div class="header-badge">题库本机保存 · 打开即练</div>
+        <label class="button button-primary header-import" for="word-input">导入 Word</label>
+        <input id="word-input" type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden />
+      </header>
+
+      <main>
+        <section id="welcome" class="welcome-card">
+          <div class="welcome-icon">文</div>
+          <p class="eyebrow">LOCAL WORD QUIZ</p>
+          <h1>把试卷变成随时可练的题库</h1>
+          <p class="welcome-copy">选择一份 Word 解析卷，自动提取选择题、答案和解析，然后直接开始练习。</p>
+          <label class="button button-primary welcome-import" for="word-input">选择本地 Word 文件</label>
+          <p class="privacy-note">仅支持 .docx · 解析后自动存入题库 · 建议使用包含答案和解析的解析卷</p>
+          <p class="welcome-import-bank"><label class="text-link" for="bank-input">已有题库文件？导入 JSON 继续练习</label></p>
+          <div class="steps">
+            <div><span>01</span><strong>本机解析</strong><small>提取 Word 正文与表格文字</small></div>
+            <div><span>02</span><strong>自动组题</strong><small>识别选择题、答案与解析</small></div>
+            <div><span>03</span><strong>开始练习</strong><small>提交答案后查看对错和讲解</small></div>
+          </div>
+
+          <section id="bankLibrary" class="bank-library" hidden>
+            <div class="bank-library-heading">
+              <div class="eyebrow">MY QUESTION BANKS</div>
+              <h2>我的题库</h2>
+              <span id="bankCount" class="bank-count">0</span>
+            </div>
+            <div id="bankList" class="bank-list"></div>
+            <p class="bank-hint">题库保存在本机浏览器中，下次打开可直接继续练习，无需重新解析。清理浏览器数据会一并清除，重要题库建议导出 JSON 备份。</p>
+          </section>
+        </section>
+
+        <section id="workspace" class="workspace" hidden>
+          <aside class="sidebar">
+            <div class="source-card">
+              <div class="source-icon">DOCX</div>
+              <div class="source-copy"><strong id="file-name"></strong><small id="file-meta"></small></div>
+              <label class="replace-file" for="word-input" title="选择另一份 Word 文件">更换</label>
+            </div>
+            <div class="sidebar-heading"><span>题目列表</span><span id="list-count" class="count-pill">0</span></div>
+            <nav id="question-list" class="question-list" aria-label="题目列表"></nav>
+            <p id="skipped-note" class="skipped-note" hidden></p>
+            <div class="bank-card">
+              <span>★</span>
+              <div>
+                <strong id="bankStatusTitle">已保存到题库</strong>
+                <small id="bankStatusNote">下次打开可直接在「我的题库」中继续练习。</small>
+                <button id="delete-bank" class="bank-delete" type="button">删除此题库</button>
+              </div>
+            </div>
+            <div class="bank-file-actions">
+              <button id="export-bank" class="button button-quiet bank-file-button" type="button">导出题库 JSON</button>
+              <label class="button button-quiet bank-file-button" for="bank-input">导入题库 JSON</label>
+              <input id="bank-input" type="file" accept=".json,application/json" hidden />
+            </div>
+          </aside>
+
+          <section class="practice">
+            <div class="practice-top">
+              <div>
+                <p class="eyebrow">PRACTICE MODE</p>
+                <h1 id="bank-name">试卷练习</h1>
+              </div>
+              <button id="restart-button" class="button button-quiet" type="button">重新练习</button>
+            </div>
+            <div class="stats">
+              <div><small>题目进度</small><strong id="progress-text">0 / 0</strong></div>
+              <div><small>已答题数</small><strong id="answered-text">0</strong></div>
+              <div><small>正确题数</small><strong id="correct-text">0</strong></div>
+              <div><small>正确率</small><strong id="accuracy-text">—</strong></div>
+            </div>
+            <div class="progress-track"><span id="progress-bar"></span></div>
+
+            <article class="question-card">
+              <div class="question-meta">
+                <span id="question-number" class="question-number"></span>
+                <span id="question-type" class="question-type"></span>
+              </div>
+              <h2 id="question-title" class="question-title"></h2>
+              <figure id="source-table" class="source-table" hidden></figure>
+              <div id="answer-options" class="answer-options"></div>
+              <div id="feedback" class="feedback" aria-live="polite" hidden></div>
+              <div class="question-actions">
+                <button id="prev-button" class="button button-quiet" type="button">上一题</button>
+                <div class="action-right">
+                  <button id="submit-button" class="button button-primary" type="button">提交答案</button>
+                  <button id="next-button" class="button button-quiet" type="button">下一题</button>
+                </div>
+              </div>
+            </article>
+            <p class="keyboard-hint">选择答案后点击「提交答案」查看正确选项和解析。</p>
+          </section>
+        </section>
+        <div id="toast" class="toast" role="status" aria-live="polite"></div>
+      </main>
+    </div>
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>

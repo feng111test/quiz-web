@@ -1,0 +1,6 @@
+node_modules/
+dist/
+dist-quiz/
+public/tessdata/
+public/builtin-data/
+.parser-smoke.mjs

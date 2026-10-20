@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="在本机识别化学试卷 PDF，校对题目，并将化学式和结构图裁剪为题目图片。"
+    />
+    <title>化学试卷 · 本地整理台</title>
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <a class="brand" href="#" aria-label="化学试卷本地整理台">
+          <span class="brand-mark">化</span>
+          <span>
+            <strong>化学试卷</strong>
+            <small>本地整理台</small>
+          </span>
+        </a>
+        <div class="header-note">题库本机保存 · 打开即练</div>
+        <label class="button button-primary choose-button" for="pdfInput">批量选择 PDF</label>
+        <input id="pdfInput" type="file" accept="application/pdf,.pdf" multiple hidden />
+      </header>
+
+      <section id="practiceView" class="practice-view" hidden>
+        <header class="practice-header">
+          <div>
+            <div class="section-eyebrow">PRACTICE MODE</div>
+            <h1 id="practiceTitle">题目练习</h1>
+            <div id="practiceProgress" class="practice-progress"></div>
+          </div>
+          <div class="practice-header-actions">
+            <button id="practiceRestart" class="button button-quiet" type="button">重新练习</button>
+            <button id="practiceClose" class="button button-primary" type="button">返回题目整理</button>
+          </div>
+        </header>
+        <div class="practice-layout">
+          <nav id="practiceQuestionList" class="practice-question-list" aria-label="已整理的题目"></nav>
+          <article class="practice-card">
+            <div class="practice-question-meta">
+              <span id="practiceNumber"></span>
+              <span id="practiceType"></span>
+            </div>
+            <h2 id="practiceQuestion"></h2>
+            <div id="practiceImages" class="practice-images"></div>
+            <div id="practiceOptions" class="practice-options"></div>
+            <div id="practiceFeedback" class="practice-feedback" aria-live="polite" hidden></div>
+            <div class="practice-actions">
+              <button id="practicePrevious" class="button button-quiet" type="button">上一题</button>
+              <div>
+                <button id="practiceSubmit" class="button button-primary" type="button">提交答案</button>
+                <button id="practiceNext" class="button button-quiet" type="button">下一题</button>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <main class="workspace">
+        <aside class="left-panel">
+          <section class="panel-section file-section">
+            <div class="section-eyebrow">SOURCE DOCUMENT</div>
+            <h1>整理一份试卷</h1>
+            <p class="muted">批量导入试卷，优先提取 PDF 文本，仅扫描页运行本地 OCR。</p>
+            <div id="fileCard" class="file-card empty">
+              <span class="file-icon">PDF</span>
+              <span id="fileName" class="file-name">尚未选择文件</span>
+              <label class="file-change" for="pdfInput">添加 PDF</label>
+            </div>
+            <div id="documentMeta" class="document-meta">题目会自动保存到本机题库</div>
+          </section>
+
+          <section class="panel-section bank-section">
+            <div class="section-heading">
+              <div>
+                <div class="section-eyebrow">MY BANKS</div>
+                <h2>我的题库</h2>
+              </div>
+              <span id="bankCount" class="count-badge">0</span>
+            </div>
+            <div id="bankList" class="bank-list">
+              <div class="bank-empty">整理过的题目会自动保存在这里</div>
+            </div>
+          </section>
+
+          <section class="panel-section page-section">
+            <div class="section-heading">
+              <div>
+                <div class="section-eyebrow">PAGES</div>
+                <h2>页面</h2>
+              </div>
+              <span id="pageCount" class="count-badge">0</span>
+            </div>
+            <div id="pageList" class="page-list empty-pages">
+              <div class="empty-note">选择 PDF 后显示页面</div>
+            </div>
+          </section>
+
+          <section class="panel-section tips-section">
+            <div class="tip-icon">i</div>
+            <div>
+              <strong>识别说明</strong>
+              <p>
+                OCR 只辅助识别普通文字；也可以直接用视觉 AI 生成题目草稿。化学式、反应式和图表仍建议框选原图，
+                并逐题人工核对答案。
+              </p>
+            </div>
+          </section>
+        </aside>
+
+        <section class="document-column">
+          <div class="document-toolbar">
+            <div class="document-title">
+              <span class="live-dot"></span>
+              <span id="pageLabel">等待导入 PDF</span>
+            </div>
+            <div class="toolbar-actions">
+              <button id="zoomOut" class="icon-button" type="button" title="缩小" disabled>−</button>
+              <span id="zoomLabel" class="zoom-label">适合宽度</span>
+              <button id="zoomIn" class="icon-button" type="button" title="放大" disabled>+</button>
+              <span class="toolbar-divider"></span>
+              <button id="prevPage" class="button button-quiet" type="button" disabled>上一页</button>
+              <button id="nextPage" class="button button-quiet" type="button" disabled>下一页</button>
+            </div>
+          </div>
+          <div id="pdfStage" class="pdf-stage">
+            <div id="welcome" class="welcome">
+              <div class="welcome-art">
+                <span class="art-page art-page-back"></span>
+                <span class="art-page art-page-front">
+                  <i></i><i></i><i></i><b>H₂SO₄</b><i></i><i></i>
+                </span>
+                <span class="art-spark spark-one">+</span>
+                <span class="art-spark spark-two">·</span>
+              </div>
+              <h2>让试卷整理，留在你的电脑里</h2>
+              <p>批量导入多份 PDF，优先提取文本，仅扫描页面运行 OCR，再逐题校对。</p>
+              <label class="button button-primary" for="pdfInput">打开本地 PDF</label>
+              <div class="welcome-foot">支持可选文字 PDF 与扫描件 · 整理好的题目自动存入本机题库</div>
+            </div>
+            <div id="pageCanvasWrap" class="page-canvas-wrap" hidden>
+              <div id="pageCanvasSurface" class="page-canvas-surface">
+                <canvas id="pdfCanvas"></canvas>
+                <div id="cropLayer" class="crop-layer" aria-label="拖动框选要保存为题目图片的区域"></div>
+              </div>
+            </div>
+            <div id="stageStatus" class="stage-status" hidden></div>
+          </div>
+          <div class="document-footer">
+            <span id="pageHint">普通文字使用 OCR，化学表达式可框选后作为图片保存</span>
+            <button id="screenshotMode" class="text-button" type="button" disabled>截图并插入</button>
+            <button id="clearCrop" class="text-button" type="button" disabled>取消框选</button>
+          </div>
+        </section>
+
+        <aside class="right-panel">
+          <div class="right-panel-scroll">
+            <section class="editor-section">
+              <div class="editor-heading">
+                <div>
+                  <div class="section-eyebrow">QUESTION EDITOR</div>
+                  <h2>题目校对</h2>
+                </div>
+                <span id="questionCount" class="count-badge">0 题</span>
+              </div>
+
+              <label class="field-label" for="questionType">题型</label>
+              <select id="questionType" class="field-control">
+                <option value="single">单选题</option>
+                <option value="multiple">多选题</option>
+                <option value="judge">判断题</option>
+              </select>
+
+              <label class="field-label" for="questionPage">原 PDF 页码</label>
+              <div class="question-page-control">
+                <input id="questionPage" class="field-control" type="number" min="1" step="1" placeholder="页码" />
+                <button id="viewQuestionPage" class="button button-quiet" type="button">查看原页</button>
+              </div>
+
+              <div class="label-with-action">
+                <label class="field-label" for="questionTitle">题干</label>
+                <div class="ocr-actions">
+                  <button id="runOcr" class="text-button accent" type="button" disabled>
+                    <span class="sparkle">✳</span>识别本页
+                  </button>
+                  <button id="rerunAllOcr" class="text-button accent" type="button" disabled>重新识别整份试卷</button>
+                  <button id="aiRecognizePage" class="text-button ai" type="button" disabled>
+                    <span class="sparkle">✦</span>AI 识别本页
+                  </button>
+                  <button id="aiRecognizeAll" class="text-button ai" type="button" disabled>AI 识别整份试卷</button>
+                </div>
+              </div>
+              <textarea
+                id="questionTitle"
+                class="field-control title-input"
+                placeholder="识别后在这里编辑题干，也可以直接输入"
+                rows="5"
+              ></textarea>
+              <div class="field-hint">OCR 结果先进入这里，建议逐句核对，复杂化学表达式请裁图。</div>
+
+              <section class="ocr-monitor" aria-live="polite">
+                <div class="ocr-monitor-heading">
+                  <div class="ocr-monitor-state">
+                    <span id="ocrStateDot" class="ocr-state-dot"></span>
+                    <strong id="ocrStatus">等待运行 OCR</strong>
+                  </div>
+                  <span id="ocrElapsed" class="ocr-elapsed">00:00</span>
+                </div>
+                <div class="ocr-progress-track">
+                  <div id="ocrProgress" class="ocr-progress"></div>
+                </div>
+                <div class="ocr-monitor-footer">
+                  <span id="ocrPhase">识别阶段与耗时会显示在这里</span>
+                  <button id="copyOcrLog" class="text-button" type="button" disabled>复制日志</button>
+                </div>
+                <div id="ocrLog" class="ocr-log" role="log" aria-label="OCR 运行日志">
+                  <div class="ocr-log-empty">运行 OCR 后会记录模型加载、PDF 渲染和识别耗时。</div>
+                </div>
+              </section>
+
+              <section class="ai-settings">
+                <button id="aiSettingsToggle" class="ai-settings-toggle" type="button" aria-expanded="false" aria-controls="aiSettingsBody">
+                  <span class="ai-toggle-mark">✦</span>视觉 AI 设置<span class="ai-toggle-arrow">▾</span>
+                </button>
+                <div id="aiSettingsBody" class="ai-settings-body" hidden>
+                  <label class="field-label" for="aiPreset">服务预设</label>
+                  <select id="aiPreset" class="field-control">
+                    <option value="zhipu-flash">智谱 GLM-4V-Flash（免费）</option>
+                  </select>
+                  <label class="field-label" for="aiBaseUrl">接口地址（OpenAI 兼容）</label>
+                  <input
+                    id="aiBaseUrl"
+                    class="field-control"
+                    type="text"
+                    spellcheck="false"
+                    placeholder="https://open.bigmodel.cn/api/paas/v4"
+                  />
+                  <label class="field-label" for="aiModel">视觉模型</label>
+                  <div class="ai-model-row">
+                    <input
+                      id="aiModel"
+                      class="field-control"
+                      type="text"
+                      list="aiModelOptions"
+                      spellcheck="false"
+                      placeholder="glm-4v-flash"
+                    />
+                    <button id="aiFetchModels" class="button button-quiet" type="button">拉取模型</button>
+                  </div>
+                  <datalist id="aiModelOptions"></datalist>
+                  <label class="field-label" for="aiApiKey">API Key</label>
+                  <input
+                    id="aiApiKey"
+                    class="field-control"
+                    type="password"
+                    spellcheck="false"
+                    autocomplete="off"
+                    placeholder="粘贴控制台的 API Key"
+                  />
+                  <div class="ai-settings-actions">
+                    <button id="aiSaveSettings" class="button button-quiet" type="button">保存设置</button>
+                    <button id="aiTestConnection" class="button button-quiet" type="button">测试连接</button>
+                  </div>
+                  <div id="aiSettingsHint" class="field-hint">
+                    Key 只保存在本机浏览器；免费额度与模型可用性以各家控制台为准。
+                  </div>
+                </div>
+              </section>
+
+              <div id="optionsField">
+                <div class="label-with-action option-label-row">
+                  <label class="field-label" for="questionOptions">选项</label>
+                  <button id="addOption" class="text-button" type="button">＋ 添加选项</button>
+                </div>
+                <div id="optionList" class="option-list"></div>
+              </div>
+
+              <label class="field-label answer-label" for="questionAnswer">正确答案</label>
+              <input
+                id="questionAnswer"
+                class="field-control"
+                type="text"
+                placeholder="例如 A 或 A,C"
+              />
+
+              <label class="field-label explanation-label" for="questionExplanation">答案解析 <span class="optional">选填</span></label>
+              <textarea
+                id="questionExplanation"
+                class="field-control explanation-input"
+                placeholder="可粘贴或手动填写答案解析"
+                rows="3"
+              ></textarea>
+            </section>
+
+            <section class="image-section">
+              <div class="label-with-action image-heading">
+                <div>
+                  <div class="section-eyebrow">FIGURES & FORMULAS</div>
+                  <h3>题目图片 <span id="imageCount" class="sub-count">0</span></h3>
+                </div>
+                <span class="crop-help">在左侧页面拖动框选</span>
+              </div>
+              <div id="imageList" class="image-list">
+                <div id="imageEmpty" class="image-empty">选中某道题后，框选页面区域添加图片</div>
+              </div>
+              <label class="button button-quiet image-upload" for="questionImageInput">＋ 从电脑插入图片</label>
+              <input id="questionImageInput" type="file" accept="image/*" multiple hidden />
+            </section>
+          </div>
+
+          <div class="editor-footer">
+            <div class="question-review-navigation">
+              <button id="previousQuestion" class="button button-quiet" type="button" disabled>上一题</button>
+              <button id="confirmQuestion" class="button button-primary" type="button" disabled>确认并下一题</button>
+              <button id="nextQuestion" class="button button-quiet" type="button" disabled>下一题</button>
+            </div>
+            <button id="newQuestion" class="button button-quiet" type="button">＋ 新题目</button>
+            <button id="saveQuestion" class="button button-primary save-button" type="button">保存这道题</button>
+            <button id="startPractice" class="button button-practice" type="button" disabled>▶ 开始刷题（0）</button>
+            <div class="export-row">
+              <span id="saveStatus" class="save-status">修改会自动存入题库</span>
+              <button id="exportJson" class="button button-export" type="button" disabled>导出题库 JSON</button>
+              <label class="button button-export" for="bankInput">导入题库 JSON</label>
+              <input id="bankInput" type="file" accept=".json,application/json" hidden />
+            </div>
+          </div>
+        </aside>
+      </main>
+      <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    </div>
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
