@@ -24,7 +24,9 @@ jobs:
         with:
           node-version: 24
       - name: 安装依赖并打包刷题页
-        run: npm ci && npm run build:quiz
+        # 用 npm install 而不是 npm ci：npm 11 在 Windows 生成的锁文件会被 ci 判定为
+        # 缺少其它平台的可选依赖（@rollup/rollup-openbsd-x64 等），导致构建直接失败
+        run: npm install --no-audit --no-fund && npm run build:quiz
       # 首次发布需要在仓库 Settings → Pages 里把 Source 选成 GitHub Actions；
       # 若想让流水线自动开通 Pages，请把带 repo 权限的 PAT 存到 secrets.PAGES_TOKEN
       - uses: actions/configure-pages@v5
