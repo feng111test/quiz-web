@@ -203,9 +203,9 @@ async function readBuiltinFile(url, gzip) {
 
 async function loadBuiltinBanks() {
   try {
-    // 题库由 scripts/prepare-default-bank.mjs 预先生成。这里相对页面地址定位文件，
-    // 站点部署在子路径（如 https://host/xxx/）时也能取到。
-    const base = new URL("../builtin-data/2026-chemistry-banks", document.baseURI).href;
+    // 题库由 scripts/prepare-default-bank.mjs 预先生成。BASE_URL 在开发时是 "/"、
+    // 独立发布时是 "./"，这样部署在子路径（如 GitHub Pages 的 /quiz-web/）也能取到。
+    const base = new URL(`${import.meta.env.BASE_URL}builtin-data/2026-chemistry-banks`, document.baseURI).href;
     let data = null;
     try {
       data = await readBuiltinFile(`${base}.json.gz?v=2`, true);
