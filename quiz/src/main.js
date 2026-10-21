@@ -1,5 +1,5 @@
 import "./styles.css";
-import { ensurePersistence, formatSavedAt, listBanks } from "../../src/question-bank.js";
+import { formatSavedAt } from "../../src/question-bank.js";
 import { escapeHtml, renderFormulaContent } from "../../src/question-text.js";
 import { sameAnswer, shuffle, toQuizQuestions } from "../../src/quiz-model.js";
 import {
@@ -9,6 +9,11 @@ import {
   getCorrection,
   saveCorrection,
 } from "../../src/question-correction.js";
+import { correctionApi } from "../../src/api.js";
+import { getSession, isTeacher } from "../../src/auth.js";
+import { initAccountUI } from "./account-ui.js";
+import { initFeedbackUI } from "./feedback-ui.js";
+import { initImageLightbox } from "./image-lightbox.js";
 
 document.documentElement.classList.toggle("embedded", new URLSearchParams(location.search).has("embedded"));
 
@@ -26,7 +31,6 @@ const ui = {
   statBanks: byId("statBanks"),
   statQuestions: byId("statQuestions"),
   statSelected: byId("statSelected"),
-  sourceChips: byId("sourceChips"),
   bankList: byId("bankList"),
   bankEmpty: byId("bankEmpty"),
   selectAll: byId("selectAll"),
@@ -51,8 +55,14 @@ const ui = {
   qBank: byId("qBank"),
   qType: byId("qType"),
   qCorrected: byId("qCorrected"),
+  feedbackButton: byId("feedbackButton"),
   correctButton: byId("correctButton"),
   correctView: byId("correctView"),
+  correctPdfSources: byId("correctPdfSources"),
+  authModal: byId("authView"),
+  feedbackModal: byId("feedbackView"),
+  inboxModal: byId("inboxView"),
+  lightbox: byId("imageLightbox"),
   correctHeading: byId("correctHeading"),
   correctClose: byId("correctClose"),
   correctType: byId("correctType"),
@@ -66,8 +76,6 @@ const ui = {
   correctReset: byId("correctReset"),
   correctCancel: byId("correctCancel"),
   correctSave: byId("correctSave"),
-  pdfPreviewContainer: byId("pdfPreviewContainer"),
-  pdfPageInfo: byId("pdfPageInfo"),
   qTitle: byId("qTitle"),
   qImages: byId("qImages"),
   qOptions: byId("qOptions"),
@@ -82,7 +90,6 @@ const ui = {
 const state = {
   banks: [],
   selected: new Set(),
-  bankFilter: "all",
   settings: { random: false, scope: "all", qtype: "all", autoNext: false },
   pool: [],
   poolBankIds: [],
@@ -93,7 +100,6 @@ const state = {
   toastTimer: null,
   progressTimer: null,
   sessionTimer: null,
-  pdfPathMap: new Map(),
 };
 
 function showToast(message) {
@@ -222,52 +228,6 @@ function flushRecords() {
   if (state.pool.length) writeSession();
 }
 
-// PDF 路径映射：根据地区与 sourcePage 找到对应的 PDF 文件
-// 内置真题的 PDF 文件命名规则：2026-{region}-chemistry.pdf（学生版）
-const PDF_BASE_DIR = "F:/2026年高考化学真题（全国各地共22省）";
-
-function getPdfPathForQuestion(question) {
-  if (!question || question.source !== "builtin") return null;
-  // 从 bankName 中提取地区，例如 "2026年高考化学真题（北京）" -> "北京"
-  const bankName = question.bankName || "";
-  const regionMatch = bankName.match(/（([^）]+)）/);
-  if (!regionMatch) return null;
-  const region = regionMatch[1];
-  const sourcePage = Number(question.sourcePage) || 1;
-  // 学生版 PDF 路径
-  const pdfPath = `${PDF_BASE_DIR}/2026-${region}-chemistry-学生版.pdf`;
-  return { pdfPath, page, region };
-}
-
-async function loadPdfPreview(question) {
-  const pdfInfo = getPdfPathForQuestion(question);
-  if (!pdfInfo) {
-    ui.pdfPreviewContainer.innerHTML = `<div class="preview-placeholder">
-      <p>暂无原卷预览</p>
-      <p class="preview-hint">本题来源于 PDF 试卷，将在此处显示对应页面</p>
-    </div>`;
-    ui.pdfPageInfo.textContent = "";
-    return;
-  }
-  const { pdfPath, page, region } = pdfInfo;
-  ui.pdfPageInfo.textContent = `${region} · 第 ${page} 页`;
-  // 显示加载中状态
-  ui.pdfPreviewContainer.innerHTML = `<div class="preview-placeholder">
-    <p>正在加载原卷预览…</p>
-    <p class="preview-hint">${pdfPath}</p>
-  </div>`;
-  // 注意：由于浏览器安全限制，无法直接访问本地或网络 PDF 文件
-  // 这里我们显示提示信息，告知用户 PDF 来源
-  ui.pdfPreviewContainer.innerHTML = `<div class="preview-placeholder">
-    <p>原卷 PDF 预览</p>
-    <p class="preview-hint">地区：${region}</p>
-    <p class="preview-hint">页码：第 ${page} 页</p>
-    <p class="preview-hint">PDF 路径：${pdfPath}</p>
-    <p class="preview-hint" style="margin-top: 16px; color: #b86966;">提示：由于浏览器安全限制，无法直接加载本地 PDF 文件。</p>
-    <p class="preview-hint">如需查看原卷，请手动打开上述 PDF 文件并翻到对应页码。</p>
-  </div>`;
-}
-
 function loadSettings() {
   const saved = readStore(SETTINGS_KEY, {});
   if (!saved || typeof saved !== "object") return;
@@ -333,12 +293,49 @@ async function loadBankQuestions(bank) {
   bank.questions = applyCorrections(
     toQuizQuestions({ id: bank.id, name: bank.name, source: "builtin", questions: list }),
   );
+  // 教师校对过的内容以服务端为准，覆盖本机校正并对所有人生效
+  await applyServerCorrections(bank);
   bank.questionCount = bank.questions.length;
   bank.typeStat = bank.questions.reduce((stat, question) => {
     stat[question.type] = (stat[question.type] || 0) + 1;
     return stat;
   }, {});
   delete bank.file;
+}
+
+/** 拉取服务端校对结果并覆盖到题目上（未登录也能读到，接口本身不校验身份） */
+async function applyServerCorrections(bank) {
+  try {
+    const data = await correctionApi.list(bank.id);
+    const list = Array.isArray(data?.corrections) ? data.corrections : [];
+    if (!list.length) return;
+    const map = new Map(list.map((item) => [`${item.bankId}::${item.questionId}`, item]));
+    bank.questions = bank.questions.map((question) => {
+      const patch = map.get(question.uid);
+      if (!patch) return question;
+      const subjective = patch.type === "subjective";
+      return {
+        ...question,
+        type: patch.type || question.type,
+        title: patch.title || question.title,
+        options: subjective
+          ? []
+          : Array.isArray(patch.options) && patch.options.length
+            ? patch.options
+            : question.options,
+        answer: subjective
+          ? []
+          : Array.isArray(patch.answer) && patch.answer.length
+            ? patch.answer
+            : question.answer,
+        answerText: typeof patch.answerText === "string" ? patch.answerText : "",
+        explanation: patch.explanation ?? question.explanation,
+        corrected: true,
+      };
+    });
+  } catch (error) {
+    console.warn("[题库] 服务端校正加载失败", bank.id, error);
+  }
 }
 
 async function ensureQuestions(bankIds) {
@@ -361,12 +358,9 @@ async function ensureQuestions(bankIds) {
 }
 
 async function refreshBanks() {
-  const [banks, builtins] = await Promise.all([listBanks(), loadBuiltinIndex()]);
-  const mergedBanks = [
-    ...builtins,
-    ...banks.filter((bank) => bank.source === "word" || bank.source === "pdf"),
-  ];
-  state.banks = mergedBanks
+  // 只使用内置真题题库，不再合并 Word / PDF 导入的本地题库
+  const builtins = await loadBuiltinIndex();
+  state.banks = builtins
     .map((bank) => {
       // 内置真题先只带索引（questions 为空），开始刷题时再按需下载
       const questions = Array.isArray(bank.questions) && bank.questions.length
@@ -468,9 +462,6 @@ function selectedCount() {
 }
 
 function renderSetup() {
-  const visible = state.banks.filter(
-    (bank) => state.bankFilter === "all" || bank.source === state.bankFilter,
-  );
   const totalQuestions = state.banks.reduce((sum, bank) => sum + questionCountOf(bank), 0);
   const pool = selectedCount();
 
@@ -480,22 +471,16 @@ function renderSetup() {
   ui.statQuestions.textContent = String(totalQuestions);
   ui.statSelected.textContent = String(pool);
 
-  ui.bankList.innerHTML = visible
+  ui.bankList.innerHTML = state.banks
     .map((bank) => {
       const stats = bankStats(bank);
       const picked = state.selected.has(bank.id);
-      const badge =
-        bank.source === "word"
-          ? { className: "word", label: "W" }
-          : bank.source === "builtin"
-            ? { className: "builtin", label: "内" }
-            : { className: "pdf", label: "P" };
       const stat = bank.typeStat || {};
       const subjective = Number(stat.subjective || 0);
       return `<div class="bank-card${picked ? " picked" : ""}">
         <label class="bank-pick">
           <input type="checkbox" data-id="${escapeHtml(bank.id)}" ${picked ? "checked" : ""} />
-          <span class="bank-badge ${badge.className}">${badge.label}</span>
+          <span class="bank-badge builtin">内</span>
           <span class="bank-copy">
             <strong>${escapeHtml(bank.name)}</strong>
             <small>${questionCountOf(bank)} 题${subjective ? ` · 主观 ${subjective}` : ""} · 已答 ${stats.answered} · 答对 ${stats.correct}${stats.flagged ? ` · 标记 ${stats.flagged}` : ""}${stats.corrected ? ` · 校正 ${stats.corrected}` : ""} · 更新于 ${escapeHtml(formatSavedAt(bank.updatedAt))}</small>
@@ -516,21 +501,11 @@ function renderSetup() {
   ui.typeModes.querySelectorAll(".segment").forEach((button) => {
     button.classList.toggle("active", button.dataset.qtype === state.settings.qtype);
   });
-  ui.sourceChips.querySelectorAll(".chip").forEach((button) => {
-    button.classList.toggle("active", button.dataset.source === state.bankFilter);
-  });
   ui.autoNext.checked = state.settings.autoNext;
 
   const pickedBanks = state.banks.filter((bank) => state.selected.has(bank.id));
-  const wordCount = pickedBanks.filter((bank) => bank.source === "word").length;
-  const pdfCount = pickedBanks.filter((bank) => bank.source === "pdf").length;
-  const builtinCount = pickedBanks.filter((bank) => bank.source === "builtin").length;
-  const pickedParts = [];
-  if (builtinCount) pickedParts.push(`内置真题 ${builtinCount} 个`);
-  if (wordCount) pickedParts.push(`Word ${wordCount} 个`);
-  if (pdfCount) pickedParts.push(`PDF ${pdfCount} 个`);
   ui.pickSummary.textContent = pickedBanks.length
-    ? `已选 ${pickedBanks.length} 个题库：${pickedParts.join(" · ")}`
+    ? `已选 ${pickedBanks.length} 个题库：内置真题 ${pickedBanks.length} 个`
     : "还没有选择题库";
 
   // 题库未加载时“本次选中”是估算值，只有没选择题库才真正禁用
@@ -570,11 +545,11 @@ function renderPractice() {
   ui.progressBar.style.width = `${total ? ((state.index + 1) / total) * 100 : 0}%`;
 
   ui.qNumber.textContent = `第 ${state.index + 1} 题`;
-  const sourceLabel =
-    question.source === "word" ? "Word 题库" : question.source === "builtin" ? "内置真题" : "PDF 题库";
-  ui.qBank.textContent = `${question.bankName} · ${sourceLabel}`;
+  ui.qBank.textContent = `${question.bankName} · 内置真题`;
   ui.qType.textContent = TYPE_LABELS[question.type] || "单选题";
   ui.qCorrected.hidden = !question.corrected;
+  // 校对题库是教师权限；学生只能走“反馈本题”
+  ui.correctButton.hidden = !isTeacher();
   ui.flagButton.classList.toggle("active", response.flagged);
   ui.flagButton.textContent = response.flagged ? "已标记" : "标记本题";
   ui.qTitle.innerHTML = renderFormulaContent(question.title, question.titleImages);
@@ -813,6 +788,23 @@ function goto(index) {
   renderPractice();
 }
 
+/** 教师采纳反馈后定位到对应题目并直接打开校对面板 */
+async function locateQuestion(bankId, questionId) {
+  const ok = await startPool([bankId], "all", "all");
+  if (!ok) return false;
+  const uid = `${bankId}::${questionId}`;
+  const index = state.pool.findIndex((question) => question.uid === uid);
+  if (index < 0) {
+    showToast("没有找到这条反馈对应的题目");
+    return false;
+  }
+  state.index = index;
+  saveSession();
+  renderPractice();
+  openCorrector();
+  return true;
+}
+
 async function startPool(bankIds, scope, qtype) {
   // 内置真题在这里才真正下载被选中的卷
   await ensureQuestions(bankIds);
@@ -886,6 +878,11 @@ function syncCorrectorFields(type) {
 function openCorrector() {
   const question = state.pool[state.index];
   if (!question) return;
+  if (!isTeacher()) {
+    showToast(getSession() ? "只有教师可以校对题目" : "请使用教师账号登录后再校对题目");
+    account?.openLogin();
+    return;
+  }
   state.correcting = question;
   ui.correctHeading.textContent = `校正本题 · ${question.bankName}`;
   ui.correctType.value = question.type;
@@ -895,9 +892,8 @@ function openCorrector() {
   ui.correctOptions.innerHTML = correctOptionRows(question.options, question.answer);
   syncCorrectorFields(question.type);
   ui.correctView.hidden = false;
-  ui.correctTitle.focus();
-  // 加载 PDF 原卷预览
   loadPdfPreview(question);
+  ui.correctTitle.focus();
 }
 
 function closeCorrector() {
@@ -927,9 +923,14 @@ function readCorrectorForm() {
   };
 }
 
-function saveCorrector() {
+async function saveCorrector() {
   const question = state.correcting;
   if (!question) return;
+  if (!isTeacher()) {
+    showToast(getSession() ? "只有教师可以校对题目" : "请使用教师账号登录后再校对题目");
+    account?.openLogin();
+    return;
+  }
   const form = readCorrectorForm();
   if (!form.title) {
     showToast("题干不能为空");
@@ -984,10 +985,26 @@ function saveCorrector() {
   saveProgress();
   closeCorrector();
   renderPractice();
-  showToast("已保存校正，本题按校正后的内容判分");
+
+  // 教师校对结果写回后端题库，其他用户刷新后就能拿到同一份内容
+  try {
+    await correctionApi.save({
+      bankId: question.bankId,
+      questionId: question.id,
+      type: question.type,
+      title: question.title,
+      options: question.options,
+      answer: question.answer,
+      answerText: question.answerText || "",
+      explanation: question.explanation,
+    });
+    showToast("已保存校正，后端题库已同步更新");
+  } catch (error) {
+    showToast(`已保存到本机，同步后端失败：${error.message}`);
+  }
 }
 
-function resetCorrector() {
+async function resetCorrector() {
   const question = state.correcting;
   if (!question) return;
   const record = getCorrection(question.uid);
@@ -1011,6 +1028,16 @@ function resetCorrector() {
   saveProgress();
   closeCorrector();
   renderPractice();
+  if (isTeacher()) {
+    try {
+      await correctionApi.remove(question.bankId, question.id);
+      showToast("已恢复原题，后端题库同步撤销");
+      return;
+    } catch (error) {
+      showToast(`已恢复本机原题，同步后端失败：${error.message}`);
+      return;
+    }
+  }
   showToast("已恢复原题");
 }
 
@@ -1062,13 +1089,6 @@ async function resumeSession() {
   return true;
 }
 
-ui.sourceChips.addEventListener("click", (event) => {
-  const chip = event.target.closest(".chip");
-  if (!chip) return;
-  state.bankFilter = chip.dataset.source;
-  renderSetup();
-});
-
 ui.bankList.addEventListener("change", (event) => {
   const input = event.target.closest("input[type=checkbox]");
   if (!input) return;
@@ -1084,16 +1104,12 @@ ui.bankList.addEventListener("click", (event) => {
 });
 
 ui.selectAll.addEventListener("click", () => {
-  state.banks
-    .filter((bank) => state.bankFilter === "all" || bank.source === state.bankFilter)
-    .forEach((bank) => state.selected.add(bank.id));
+  state.banks.forEach((bank) => state.selected.add(bank.id));
   renderSetup();
 });
 
 ui.selectNone.addEventListener("click", () => {
-  state.banks
-    .filter((bank) => state.bankFilter === "all" || bank.source === state.bankFilter)
-    .forEach((bank) => state.selected.delete(bank.id));
+  state.banks.forEach((bank) => state.selected.delete(bank.id));
   renderSetup();
 });
 
@@ -1229,9 +1245,23 @@ ui.practiceWrongOnly.addEventListener("click", () => {
 });
 
 document.addEventListener("keydown", (event) => {
+  // 图片放大层打开时，快捷键全部交给它（Esc 关闭）
+  if (!ui.lightbox.hidden) return;
+  if (!ui.authModal.hidden) {
+    // 登录门禁不可关闭；只有已登录时主动打开的登录框才能 Esc 关掉
+    if (event.key === "Escape" && getSession()) ui.authModal.hidden = true;
+    return;
+  }
   if (!ui.correctView.hidden) {
     // 校正面板打开时不再响应刷题快捷键，Esc 关闭面板
     if (event.key === "Escape") closeCorrector();
+    return;
+  }
+  if (!ui.feedbackModal.hidden || !ui.inboxModal.hidden) {
+    if (event.key === "Escape") {
+      ui.feedbackModal.hidden = true;
+      ui.inboxModal.hidden = true;
+    }
     return;
   }
   if (ui.practiceView.hidden) return;
@@ -1287,17 +1317,106 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
+let account = null;
+let feedbackUI = null;
+// 题库只在登录后加载：未登录时看不到题库，也进不了刷题页
+let banksReady = false;
+let banksLoading = null;
+
+function renderRoleUI() {
+  ui.correctButton.hidden = !isTeacher();
+  if (state.pool.length && !ui.practiceView.hidden) renderPractice();
+}
+
+/** 未登录 / 退出登录：清空题库与练习状态，退回登录门禁 */
+function resetToGate() {
+  state.banks = [];
+  state.selected.clear();
+  state.pool = [];
+  state.poolBankIds = [];
+  state.index = 0;
+  banksReady = false;
+  banksLoading = null;
+  ui.setupView.hidden = true;
+  ui.practiceView.hidden = true;
+  ui.correctView.hidden = true;
+  ui.feedbackModal.hidden = true;
+  ui.inboxModal.hidden = true;
+  ui.lightbox.hidden = true;
+}
+
+async function syncAuthState(session) {
+  renderRoleUI();
+  feedbackUI?.refreshBadge();
+  if (!session) {
+    resetToGate();
+    return;
+  }
+  if (!banksReady) {
+    banksLoading =
+      banksLoading ||
+      refreshBanks().then(() => {
+        banksReady = true;
+      });
+    await banksLoading;
+    // 默认全选，不自动恢复上次练习
+    if (!state.selectionReady && !state.selected.size) {
+      state.banks.forEach((bank) => state.selected.add(bank.id));
+    }
+    state.selectionReady = true;
+  }
+  if (ui.practiceView.hidden) enterSetup();
+  else renderPractice();
+}
+
+account = initAccountUI({ showToast, onSessionChange: syncAuthState });
+initImageLightbox();
+feedbackUI = initFeedbackUI({
+  showToast,
+  getCurrentQuestion: () => state.pool[state.index],
+  locateQuestion,
+});
+
 async function init() {
   loadSettings();
   loadProgress();
-  await refreshBanks();
-  // 默认进入选择题库页面，不自动恢复上次练习
-  if (!state.selectionReady && !state.selected.size) {
-    state.banks.forEach((bank) => state.selected.add(bank.id));
-  }
-  state.selectionReady = true;
-  enterSetup();
+  // 恢复登录态：有效才加载题库并进入，否则停在登录门禁
+  await account.restore();
 }
 
-ensurePersistence();
 init();
+
+const SOURCE_PDF_NAMES = {
+  北京: ["2026年高考北京卷化学高考真题（学生版）.pdf", "2026年高考北京卷化学高考真题（答案版）.pdf"],
+  重庆: ["2026年高考重庆卷化学高考真题（学生版）.pdf", "2026年高考重庆卷化学高考真题（答案版）.pdf"],
+  广东: ["2026年高考广东卷化学高考真题（学生版）.pdf", "2026年高考广东卷化学高考真题（答案版）.pdf"],
+  贵州: ["2026年高考贵州卷化学高考真题（学生版）.pdf", "2026年高考贵州卷化学高考真题（答案版）.pdf"],
+  河北: ["2026年高考河北卷化学高考真题（学生版）.pdf", "2026年高考河北卷化学高考真题（答案版）.pdf"],
+  河南: ["2026年高考河南卷化学高考真题（学生版）.pdf", "2026年高考河南卷化学高考真题（答案版）.pdf"],
+  黑吉辽蒙: ["2026年高考黑吉辽蒙卷化学高考真题（学生版）.pdf", "2026年高考黑吉辽蒙卷化学高考真题（答案版）.pdf"],
+  湖北: ["2026年高考湖北卷化学高考真题（学生版）.pdf", "2026年高考湖北卷化学高考真题（答案版）.pdf"],
+  湖南: ["2026年高考湖南卷化学高考真题（学生版）.pdf", "2026年高考湖南卷化学高考真题（答案版）.pdf"],
+  云南: ["2026年高考化学真题（云南卷）（学生版）.pdf", "2026年高考化学真题（云南卷）（答案版）.pdf"],
+  江苏: ["2026年高考江苏卷化学高考真题（学生版）.pdf", "2026年高考江苏卷化学高考真题（答案版）.pdf"],
+  江西: ["2026年高考江西卷化学高考真题（学生版）.pdf", "2026年高考江西卷化学高考真题（答案版）.pdf"],
+  山东: ["2026年高考山东卷化学高考真题 学生版.pdf", "2026年高考山东卷化学高考真题 答案版.pdf"],
+  陕晋青宁: ["2026年高考陕晋青宁卷化学高考真题（学生版）.pdf", "2026年高考陕晋青宁卷化学高考真题（答案版）.pdf"],
+  上海: ["2026年高考上海卷化学高考真题.pdf", "2026年高考上海卷化学高考真题答案.pdf"],
+  四川: ["2026年高考四川卷化学高考真题（学生版）.pdf", "2026年高考四川卷化学高考真题（答案版）.pdf"],
+};
+
+function loadPdfPreview(question) {
+  const match = (question?.bankName || "").match(/（([^）]+)）/);
+  const region = match?.[1];
+  const names = question?.source === "builtin" ? SOURCE_PDF_NAMES[region] : null;
+  if (!names) {
+    ui.correctPdfSources.innerHTML = '<div class="correct-pdf-empty">没有找到本题对应的原卷 PDF</div>';
+    return;
+  }
+  const page = Math.max(1, Number(question.sourcePage) || 1);
+  ui.correctPdfSources.innerHTML = names.map((name, index) => `
+    <section class="correct-pdf-card">
+      <header><strong>${index === 0 ? "学生版" : "答案版"}</strong><span>${region} · 第 ${page} 页</span></header>
+      <iframe title="${region}化学真题${index === 0 ? "学生版" : "答案版"}" src="/source-pdfs/${encodeURIComponent(name)}#page=${page}&toolbar=1&navpanes=0"></iframe>
+    </section>`).join("");
+}

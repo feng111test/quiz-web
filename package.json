@@ -8,10 +8,17 @@
     "dev": "node scripts/prepare-default-bank.mjs && vite --host 127.0.0.1",
     "build": "node scripts/prepare-default-bank.mjs && vite build",
     "build:quiz": "node scripts/prepare-default-bank.mjs && vite build --config vite.quiz.config.js",
-    "preview:quiz": "vite preview --config vite.quiz.config.js --outDir dist-quiz --host 127.0.0.1"
+    "preview:quiz": "vite preview --config vite.quiz.config.js --outDir dist-quiz --host 127.0.0.1",
+    "server": "node server/index.js",
+    "start": "node server/index.js",
+    "seed": "node server/seed-cli.js"
   },
   "dependencies": {
     "@napi-rs/canvas": "0.1.100",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "express": "^5.3.0",
+    "jsonwebtoken": "^9.0.3",
     "jszip": "3.10.1",
     "pdfjs-dist": "5.4.624"
   },

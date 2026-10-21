@@ -3,4 +3,5 @@ dist/
 dist-quiz/
 public/tessdata/
 public/builtin-data/
+server/data/
 .parser-smoke.mjs

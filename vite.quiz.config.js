@@ -13,6 +13,19 @@ export default defineConfig({
   base: "./",
   // 不复制 web/public：那里的 tessdata 是 PDF OCR 用的，刷题页不需要
   publicDir: false,
+  server: {
+    // 前端统一用同源 /api，由 vite 转发到题库服务（npm run server）
+    proxy: {
+      "/api": {
+        target: process.env.QUIZ_SERVER_URL || "http://127.0.0.1:8787",
+        changeOrigin: true,
+      },
+      "/source-pdfs": {
+        target: process.env.QUIZ_SERVER_URL || "http://127.0.0.1:8787",
+        changeOrigin: true,
+      },
+    },
+  },
   build: {
     outDir: resolve(webRoot, "dist-quiz"),
     emptyOutDir: true,
