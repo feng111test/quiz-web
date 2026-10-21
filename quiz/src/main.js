@@ -48,12 +48,16 @@ const ui = {
   practiceTitle: byId("practiceTitle"),
   practiceProgress: byId("practiceProgress"),
   progressBar: byId("progressBar"),
+  endPractice: byId("endPractice"),
   practiceRestart: byId("practiceRestart"),
   practiceExit: byId("practiceExit"),
   practiceAgain: byId("practiceAgain"),
   practiceWrongOnly: byId("practiceWrongOnly"),
   finishCard: byId("finishCard"),
+  finishTitle: byId("finishTitle"),
   finishSummary: byId("finishSummary"),
+  progressTrack: byId("progressTrack"),
+  practiceLayout: byId("practiceLayout"),
   navList: byId("navList"),
   qNumber: byId("qNumber"),
   qBank: byId("qBank"),
@@ -107,6 +111,7 @@ const state = {
   toastTimer: null,
   progressTimer: null,
   sessionTimer: null,
+  ended: false,
 };
 
 function showToast(message) {
@@ -582,9 +587,16 @@ function renderPractice() {
   renderNav();
 
   const allAnswered = answered === total;
-  ui.finishCard.hidden = !allAnswered;
-  if (allAnswered) {
-    ui.finishSummary.textContent = `共 ${total} 题 · 答对 ${correct} 题 · 正确率 ${accuracy}%`;
+  const ended = state.ended;
+  const showFinish = allAnswered || ended;
+  ui.finishCard.hidden = !showFinish;
+  ui.progressTrack.hidden = ended;
+  ui.practiceLayout.hidden = ended;
+  if (showFinish) {
+    ui.finishTitle.textContent = ended && !allAnswered ? "本轮练习已结束" : "本轮练习已完成";
+    ui.finishSummary.textContent = ended && !allAnswered
+      ? `共 ${total} 题 · 已答 ${answered} 题 · 答对 ${correct} 题 · 正确率 ${answered ? `${accuracy}%` : "—"}`
+      : `共 ${total} 题 · 答对 ${correct} 题 · 正确率 ${accuracy}%`;
     ui.practiceWrongOnly.disabled = total - correct === 0;
   }
 }
@@ -826,6 +838,7 @@ async function startPool(bankIds, scope, qtype) {
   state.pool = pool;
   state.poolBankIds = [...bankIds];
   state.index = 0;
+  state.ended = false;
   saveSession();
   enterPractice();
   return true;
@@ -855,9 +868,30 @@ function restartPractice() {
     return;
   }
   state.index = 0;
+  state.ended = false;
   saveSession();
   renderPractice();
   showToast("已清空答题记录，重新开始");
+}
+
+/** 中途结束本轮练习：保留已答记录，展示本轮总结，可继续只练错题或再来一次 */
+function finishPractice() {
+  if (state.ended) return;
+  const total = state.pool.length;
+  const answered = state.pool.filter((item) => responseFor(item).submitted).length;
+  if (!total) return;
+  if (answered === 0) {
+    // 一题没答，直接回选题页即可，无需展示空总结
+    flushRecords();
+    state.ended = false;
+    enterSetup();
+    return;
+  }
+  if (!window.confirm(`结束本轮练习？已作答的 ${answered} 题记录会保留，可稍后继续或只练错题。`)) return;
+  flushRecords();
+  state.ended = true;
+  renderPractice();
+  ui.finishCard.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 /* ---------------- 题目校正 ---------------- */
@@ -1297,8 +1331,11 @@ function finishCropSelection(event) {
 window.addEventListener("pointerup", finishCropSelection);
 window.addEventListener("pointercancel", finishCropSelection);
 
+ui.endPractice.addEventListener("click", finishPractice);
+
 ui.practiceExit.addEventListener("click", () => {
   flushRecords();
+  state.ended = false;
   enterSetup();
 });
 
@@ -1311,6 +1348,7 @@ ui.practiceRestart.addEventListener("click", restartPractice);
 
 ui.practiceAgain.addEventListener("click", () => {
   clearPoolResponses();
+  state.ended = false;
   state.pool = rebuildPool();
   if (!state.pool.length) {
     enterSetup();

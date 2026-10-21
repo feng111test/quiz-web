@@ -130,16 +130,17 @@
             <p id="practiceProgress" class="practice-progress"></p>
           </div>
           <div class="practice-header-actions">
+            <button id="endPractice" class="button button-quiet" type="button">结束作答</button>
             <button id="practiceRestart" class="button button-quiet" type="button">重新练习</button>
             <button id="practiceExit" class="button button-quiet" type="button">返回选题</button>
           </div>
         </header>
 
-        <div class="progress-track"><span id="progressBar"></span></div>
+        <div id="progressTrack" class="progress-track"><span id="progressBar"></span></div>
 
         <section id="finishCard" class="finish-card" hidden>
           <div class="finish-copy">
-            <strong>本轮练习已完成</strong>
+            <strong id="finishTitle">本轮练习已完成</strong>
             <small id="finishSummary"></small>
           </div>
           <div class="finish-actions">
@@ -148,7 +149,7 @@
           </div>
         </section>
 
-        <div class="practice-layout">
+        <div id="practiceLayout" class="practice-layout">
           <nav id="navList" class="nav-grid" aria-label="题目导航"></nav>
 
           <article class="question-card">
