@@ -11,7 +11,13 @@
     "preview:quiz": "vite preview --config vite.quiz.config.js --outDir dist-quiz --host 127.0.0.1",
     "server": "node server/index.js",
     "start": "node server/index.js",
-    "seed": "node server/seed-cli.js"
+    "start:lan": "pwsh -NoProfile -File deploy/start-lan.ps1",
+    "start:tunnel": "pwsh -NoProfile -File deploy/start-tunnel.ps1",
+    "backup:db": "pwsh -NoProfile -File deploy/backup-db.ps1",
+    "seed": "node server/seed-cli.js",
+    "test": "node --test",
+    "test:server": "node --test server/tests",
+    "test:client": "node --test src/tests"
   },
   "dependencies": {
     "@napi-rs/canvas": "0.1.100",

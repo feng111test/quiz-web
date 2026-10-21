@@ -14,6 +14,10 @@ import { getSession, isTeacher } from "../../src/auth.js";
 import { initAccountUI } from "./account-ui.js";
 import { initFeedbackUI } from "./feedback-ui.js";
 import { initImageLightbox } from "./image-lightbox.js";
+import * as pdfjsLib from "pdfjs-dist";
+import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 document.documentElement.classList.toggle("embedded", new URLSearchParams(location.search).has("embedded"));
 
@@ -67,6 +71,7 @@ const ui = {
   correctClose: byId("correctClose"),
   correctType: byId("correctType"),
   correctTitle: byId("correctTitle"),
+  correctImages: byId("correctImages"),
   correctAnswerField: byId("correctAnswerField"),
   correctAnswerText: byId("correctAnswerText"),
   correctOptionsField: byId("correctOptionsField"),
@@ -95,6 +100,8 @@ const state = {
   poolBankIds: [],
   index: 0,
   correcting: null,
+  correctionImages: { images: [], titleImages: [] },
+  crop: null,
   responses: new Map(),
   selectionReady: false,
   toastTimer: null,
@@ -330,6 +337,8 @@ async function applyServerCorrections(bank) {
             : question.answer,
         answerText: typeof patch.answerText === "string" ? patch.answerText : "",
         explanation: patch.explanation ?? question.explanation,
+        images: Array.isArray(patch.images) ? patch.images : question.images,
+        titleImages: Array.isArray(patch.titleImages) ? patch.titleImages : question.titleImages,
         corrected: true,
       };
     });
@@ -890,10 +899,28 @@ function openCorrector() {
   ui.correctAnswerText.value = question.answerText || "";
   ui.correctExplanation.value = question.explanation;
   ui.correctOptions.innerHTML = correctOptionRows(question.options, question.answer);
+  state.correctionImages = {
+    images: (question.images || []).map((image) => ({ ...image })),
+    titleImages: (question.titleImages || []).map((image) => ({ ...image })),
+  };
+  renderCorrectImages();
   syncCorrectorFields(question.type);
   ui.correctView.hidden = false;
   loadPdfPreview(question);
   ui.correctTitle.focus();
+}
+
+function renderCorrectImages() {
+  const groups = [
+    ["images", "题干配图"],
+    ["titleImages", "行内图片"],
+  ];
+  const rows = groups.flatMap(([key, label]) => state.correctionImages[key].map((image, index) => `
+    <figure class="correct-image-item">
+      <img src="${escapeHtml(image.src || image.dataUrl || "")}" alt="${label} ${index + 1}" />
+      <figcaption>${label} ${index + 1}<button class="correct-image-remove" type="button" data-image-group="${key}" data-image-index="${index}">删除</button></figcaption>
+    </figure>`));
+  ui.correctImages.innerHTML = rows.length ? rows.join("") : '<span class="correct-images-empty">暂无图片，可从左侧原卷截图添加</span>';
 }
 
 function closeCorrector() {
@@ -920,6 +947,8 @@ function readCorrectorForm() {
     explanation: ui.correctExplanation.value.trim(),
     options,
     answer: [...new Set(answer)],
+    images: state.correctionImages.images,
+    titleImages: state.correctionImages.titleImages,
   };
 }
 
@@ -962,6 +991,8 @@ async function saveCorrector() {
       answer: question.answer,
       answerText: question.answerText || "",
       explanation: question.explanation,
+      images: question.images || [],
+      titleImages: question.titleImages || [],
     };
 
   // 选项里可能带公式图片，按选项标号保留下来
@@ -975,6 +1006,8 @@ async function saveCorrector() {
   question.answer = form.type === "subjective" ? [] : form.answer;
   question.answerText = form.type === "subjective" ? form.answerText : "";
   question.explanation = form.explanation;
+  question.images = form.images;
+  question.titleImages = form.titleImages;
   question.corrected = true;
 
   // 已提交的客观题按新答案重新判分（主观题是自评结果，不重新判定）
@@ -997,6 +1030,8 @@ async function saveCorrector() {
       answer: question.answer,
       answerText: question.answerText || "",
       explanation: question.explanation,
+      images: question.images,
+      titleImages: question.titleImages,
     });
     showToast("已保存校正，后端题库已同步更新");
   } catch (error) {
@@ -1019,6 +1054,8 @@ async function resetCorrector() {
   question.answer = source.answer || question.answer;
   question.answerText = typeof source.answerText === "string" ? source.answerText : question.answerText;
   question.explanation = source.explanation ?? question.explanation;
+  question.images = source.images || question.images;
+  question.titleImages = source.titleImages || question.titleImages;
   question.corrected = false;
   clearCorrection(question.uid);
   const response = state.responses.get(question.uid);
@@ -1199,6 +1236,66 @@ ui.correctType.addEventListener("change", () => {
     checked === 0 ? ["正确"] : checked === 1 ? ["错误"] : [],
   );
 });
+
+ui.correctImages.addEventListener("click", (event) => {
+  const button = event.target.closest(".correct-image-remove");
+  if (!button) return;
+  const group = button.dataset.imageGroup;
+  state.correctionImages[group]?.splice(Number(button.dataset.imageIndex), 1);
+  renderCorrectImages();
+});
+
+ui.correctPdfSources.addEventListener("click", async (event) => {
+  const cropButton = event.target.closest(".correct-pdf-crop");
+  if (cropButton) {
+    await beginPdfCrop(cropButton);
+    return;
+  }
+  const cancelButton = event.target.closest(".correct-crop-cancel");
+  if (cancelButton) {
+    loadPdfPreview(state.correcting);
+    return;
+  }
+  const renderButton = event.target.closest(".correct-crop-render");
+  if (renderButton) {
+    await renderCropPage(renderButton.closest(".correct-pdf-card"), renderButton.closest(".correct-pdf-card").querySelector(".correct-crop-page").value);
+    return;
+  }
+  const addButton = event.target.closest(".correct-crop-add");
+  if (addButton) addCropToQuestion(addButton.closest(".correct-pdf-card"));
+});
+
+ui.correctPdfSources.addEventListener("pointerdown", (event) => {
+  const overlay = event.target.closest(".correct-crop-overlay");
+  if (!overlay || event.button !== 0) return;
+  event.preventDefault();
+  const card = overlay.closest(".correct-pdf-card");
+  const box = document.createElement("div");
+  box.className = "correct-crop-selection";
+  overlay.replaceChildren(box);
+  state.crop = { start: cropPointerPosition(event, overlay), end: cropPointerPosition(event, overlay), box, card, overlay, pointerId: event.pointerId, dragging: true };
+  updateCropSelection(overlay, state.crop);
+  card.querySelector(".correct-crop-add").disabled = true;
+});
+window.addEventListener("pointermove", (event) => {
+  if (!state.crop?.dragging || state.crop.pointerId !== event.pointerId) return;
+  const { overlay } = state.crop;
+  state.crop.end = cropPointerPosition(event, overlay);
+  updateCropSelection(overlay, state.crop);
+});
+function finishCropSelection(event) {
+  if (!state.crop?.dragging || (event && state.crop.pointerId !== event.pointerId)) return;
+  const { overlay } = state.crop;
+  if (event) {
+    state.crop.end = cropPointerPosition(event, overlay);
+    updateCropSelection(overlay, state.crop);
+  }
+  const { rect, card } = state.crop;
+  state.crop.dragging = false;
+  card.querySelector(".correct-crop-add").disabled = !rect || rect.width < 0.006 || rect.height < 0.006;
+}
+window.addEventListener("pointerup", finishCropSelection);
+window.addEventListener("pointercancel", finishCropSelection);
 
 ui.practiceExit.addEventListener("click", () => {
   flushRecords();
@@ -1404,6 +1501,7 @@ const SOURCE_PDF_NAMES = {
   上海: ["2026年高考上海卷化学高考真题.pdf", "2026年高考上海卷化学高考真题答案.pdf"],
   四川: ["2026年高考四川卷化学高考真题（学生版）.pdf", "2026年高考四川卷化学高考真题（答案版）.pdf"],
 };
+const correctionPdfDocuments = new Map();
 
 function loadPdfPreview(question) {
   const match = (question?.bankName || "").match(/（([^）]+)）/);
@@ -1418,5 +1516,90 @@ function loadPdfPreview(question) {
     <section class="correct-pdf-card">
       <header><strong>${index === 0 ? "学生版" : "答案版"}</strong><span>${region} · 第 ${page} 页</span></header>
       <iframe title="${region}化学真题${index === 0 ? "学生版" : "答案版"}" src="/source-pdfs/${encodeURIComponent(name)}#page=${page}&toolbar=1&navpanes=0"></iframe>
+      <button class="correct-pdf-crop" type="button" data-pdf-name="${escapeHtml(name)}" data-pdf-page="${page}">从此卷截图</button>
     </section>`).join("");
+}
+
+async function beginPdfCrop(button) {
+  const card = button.closest(".correct-pdf-card");
+  const fileName = button.dataset.pdfName;
+  const initialPage = Number(button.dataset.pdfPage) || 1;
+  card.innerHTML = `<header><strong>框选要插入题干的区域</strong><button class="correct-crop-cancel" type="button">返回原卷</button></header>
+    <div class="correct-crop-controls"><label>页码 <input class="correct-crop-page" type="number" min="1" value="${initialPage}" /></label>
+      <button class="correct-crop-render" type="button">跳转</button><span>拖动框选，确认后会加入右侧题干图片</span></div>
+    <div class="correct-crop-stage"><div class="correct-crop-page"><canvas></canvas><div class="correct-crop-overlay"></div></div></div>
+    <button class="correct-crop-add" type="button" disabled>添加截图</button>`;
+  card.dataset.pdfName = fileName;
+  card.dataset.originalPage = String(initialPage);
+  await renderCropPage(card, initialPage);
+}
+
+async function renderCropPage(card, requestedPage) {
+  const fileName = card.dataset.pdfName;
+  const pageInput = card.querySelector(".correct-crop-page");
+  const canvas = card.querySelector("canvas");
+  const stage = card.querySelector(".correct-crop-stage");
+  const button = card.querySelector(".correct-crop-add");
+  button.disabled = true;
+  state.crop = null;
+  try {
+    let loading = correctionPdfDocuments.get(fileName);
+    if (!loading) {
+      loading = pdfjsLib.getDocument(`/source-pdfs/${encodeURIComponent(fileName)}`).promise;
+      correctionPdfDocuments.set(fileName, loading);
+    }
+    const pdf = await loading;
+    const pageNumber = Math.min(Math.max(1, Number(requestedPage) || 1), pdf.numPages);
+    pageInput.value = String(pageNumber);
+    const page = await pdf.getPage(pageNumber);
+    const scale = Math.min(1.7, 1100 / page.getViewport({ scale: 1 }).width);
+    const viewport = page.getViewport({ scale });
+    canvas.width = Math.ceil(viewport.width);
+    canvas.height = Math.ceil(viewport.height);
+    await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+    stage.dataset.page = String(pageNumber);
+    stage.dataset.file = fileName;
+    stage.querySelector(".correct-crop-overlay").replaceChildren();
+  } catch (error) {
+    showToast(`原卷页面加载失败：${error.message}`);
+  }
+}
+
+function cropPointerPosition(event, overlay) {
+  const box = overlay.getBoundingClientRect();
+  if (!box.width || !box.height) return { x: 0, y: 0 };
+  return {
+    x: Math.max(0, Math.min(1, (event.clientX - box.left) / box.width)),
+    y: Math.max(0, Math.min(1, (event.clientY - box.top) / box.height)),
+  };
+}
+
+function updateCropSelection(overlay, selection) {
+  const left = Math.min(selection.start.x, selection.end.x);
+  const top = Math.min(selection.start.y, selection.end.y);
+  const width = Math.abs(selection.start.x - selection.end.x);
+  const height = Math.abs(selection.start.y - selection.end.y);
+  selection.rect = { left, top, width, height };
+  Object.assign(selection.box.style, {
+    left: `${left * 100}%`, top: `${top * 100}%`, width: `${width * 100}%`, height: `${height * 100}%`,
+  });
+}
+
+function addCropToQuestion(card) {
+  const stage = card.querySelector(".correct-crop-stage");
+  const canvas = stage.querySelector("canvas");
+  const rect = state.crop?.rect;
+  if (!rect || rect.width < 0.006 || rect.height < 0.006) return;
+  const sourceX = Math.floor(rect.left * canvas.width);
+  const sourceY = Math.floor(rect.top * canvas.height);
+  const sourceWidth = Math.min(canvas.width - sourceX, Math.ceil(rect.width * canvas.width));
+  const sourceHeight = Math.min(canvas.height - sourceY, Math.ceil(rect.height * canvas.height));
+  const crop = document.createElement("canvas");
+  crop.width = sourceWidth;
+  crop.height = sourceHeight;
+  crop.getContext("2d").drawImage(canvas, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, sourceWidth, sourceHeight);
+  state.correctionImages.images.push({ src: crop.toDataURL("image/jpeg", 0.9) });
+  renderCorrectImages();
+  showToast("截图已加入题干图片，保存校正后生效");
+  card.querySelector(".correct-crop-cancel").click();
 }

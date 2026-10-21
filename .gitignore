@@ -4,4 +4,6 @@ dist-quiz/
 public/tessdata/
 public/builtin-data/
 server/data/
+deploy/env.ps1
+backups/
 .parser-smoke.mjs

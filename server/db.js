@@ -59,3 +59,12 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_feedback_status ON feedback (status, createdAt);
   CREATE INDEX IF NOT EXISTS idx_corrections_bank ON corrections (bankId);
 `);
+
+// 旧数据库升级：为校正记录补充可编辑的题干图片字段。
+const correctionColumns = new Set(db.prepare("PRAGMA table_info(corrections)").all().map((column) => column.name));
+for (const column of ["images", "titleImages"]) {
+  if (!correctionColumns.has(column)) {
+    // NULL distinguishes legacy corrections (keep built-in images) from a new correction that intentionally removes every image.
+    db.exec(`ALTER TABLE corrections ADD COLUMN ${column} TEXT`);
+  }
+}

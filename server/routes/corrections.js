@@ -22,6 +22,13 @@ function readOptions(value) {
     .filter((option) => option.key && option.content);
 }
 
+function readImages(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((image) => ({ src: String(image?.src ?? image?.dataUrl ?? "") }))
+    .filter((image) => image.src.startsWith("data:image/"));
+}
+
 function readAnswer(value) {
   const items = Array.isArray(value) ? value : String(value ?? "").split(/[,，、\s]+/);
   return [...new Set(items.map((item) => String(item ?? "").trim()).filter(Boolean))];
@@ -31,6 +38,8 @@ function parseRow(row) {
   if (!row) return null;
   let options = [];
   let answer = [];
+  let images = [];
+  let titleImages = [];
   try {
     options = JSON.parse(row.options || "[]");
   } catch {
@@ -41,6 +50,8 @@ function parseRow(row) {
   } catch {
     answer = [];
   }
+  try { images = JSON.parse(row.images || "[]"); } catch { images = []; }
+  try { titleImages = JSON.parse(row.titleImages || "[]"); } catch { titleImages = []; }
   if (!Array.isArray(options)) options = [];
   if (!Array.isArray(answer)) answer = [];
   return {
@@ -52,6 +63,8 @@ function parseRow(row) {
     options,
     answer,
     explanation: row.explanation || "",
+    images: row.images == null ? undefined : readImages(images),
+    titleImages: row.titleImages == null ? undefined : readImages(titleImages),
     authorName: row.authorName || "",
     updatedAt: row.updatedAt,
   };
@@ -81,6 +94,8 @@ router.put("/", authRequired, teacherRequired, (req, res) => {
   const options = readOptions(req.body?.options);
   const answer = readAnswer(req.body?.answer);
   const answerText = String(req.body?.answerText ?? "").trim();
+  const images = readImages(req.body?.images);
+  const titleImages = readImages(req.body?.titleImages);
 
   if (type === "subjective") {
     if (!answerText) return res.status(400).json({ message: "主观题请填写参考答案" });
@@ -91,8 +106,8 @@ router.put("/", authRequired, teacherRequired, (req, res) => {
 
   db.prepare(
     `INSERT INTO corrections
-       (bankId, questionId, type, title, answerText, options, answer, explanation, authorId, authorName, updatedAt)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       (bankId, questionId, type, title, answerText, options, answer, explanation, images, titleImages, authorId, authorName, updatedAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT (bankId, questionId) DO UPDATE SET
        type = excluded.type,
        title = excluded.title,
@@ -100,6 +115,8 @@ router.put("/", authRequired, teacherRequired, (req, res) => {
        options = excluded.options,
        answer = excluded.answer,
        explanation = excluded.explanation,
+       images = excluded.images,
+       titleImages = excluded.titleImages,
        authorId = excluded.authorId,
        authorName = excluded.authorName,
        updatedAt = excluded.updatedAt`,
@@ -112,6 +129,8 @@ router.put("/", authRequired, teacherRequired, (req, res) => {
     JSON.stringify(type === "subjective" ? [] : options),
     JSON.stringify(type === "subjective" ? [] : answer),
     String(req.body?.explanation ?? "").trim(),
+    JSON.stringify(images),
+    JSON.stringify(titleImages),
     req.user.id,
     req.user.displayName || req.user.username,
     Date.now(),

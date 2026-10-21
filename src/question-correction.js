@@ -81,6 +81,8 @@ export function applyCorrections(questions) {
       ...question,
       type: patch.type || question.type,
       title: typeof patch.title === "string" ? patch.title : question.title,
+      images: Array.isArray(patch.images) ? patch.images : question.images,
+      titleImages: Array.isArray(patch.titleImages) ? patch.titleImages : question.titleImages,
       options,
       answer: Array.isArray(patch.answer) && patch.answer.length ? [...patch.answer] : question.answer,
       // 主观题的答案是一整段文字，单独存一个字段

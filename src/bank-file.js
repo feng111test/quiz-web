@@ -39,7 +39,7 @@ function normalizeAnswerText(value) {
   return String(value ?? "").trim();
 }
 
-function toCanonicalQuestion(raw, index) {
+export function toCanonicalQuestion(raw, index) {
   if (!raw || typeof raw !== "object") return null;
   const subjective = String(raw.type ?? "").trim() === "subjective";
   const rawOptions = Array.isArray(raw.options) ? raw.options : [];
