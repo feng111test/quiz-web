@@ -251,14 +251,22 @@ function loadSettings() {
   };
 }
 
-async function readBuiltinFile(url, gzip) {
+async function readBuiltinFile(url) {
   const response = await fetch(url);
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  if (!gzip) return response.json();
-  if (typeof DecompressionStream !== "function" || !response.body) {
+  const buffer = await response.arrayBuffer();
+  // 静态服务器（含 vite 开发/预览服务）会给 .gz 文件自动补上 Content-Encoding: gzip，
+  // 浏览器已经解压过一遍，此时再走 DecompressionStream 会让响应流报错（Failed to fetch）。
+  // 所以统一按 gzip 魔术字节判断：拿到的是裸压缩包才自己解压。
+  const head = new Uint8Array(buffer.slice(0, 2));
+  if (head[0] !== 0x1f || head[1] !== 0x8b) {
+    return JSON.parse(new TextDecoder().decode(buffer));
+  }
+  if (typeof DecompressionStream !== "function") {
     throw new Error("浏览器不支持 gzip 流式解压");
   }
-  return new Response(response.body.pipeThrough(new DecompressionStream("gzip"))).json();
+  const stream = new Response(buffer).body.pipeThrough(new DecompressionStream("gzip"));
+  return new Response(stream).json();
 }
 
 // 内置真题题量大（含主观题），按卷拆分成多个文件：选题页只读索引，
@@ -270,7 +278,7 @@ function builtinUrl(path) {
 
 async function loadBuiltinIndex() {
   try {
-    const data = await readBuiltinFile(builtinUrl("index.json?v=3"), false);
+    const data = await readBuiltinFile(builtinUrl("index.json?v=3"));
     const generatedAt = data?.generatedAt || Date.now();
     const list = Array.isArray(data?.banks) ? data.banks : [];
     return list
@@ -296,11 +304,11 @@ async function loadBankQuestions(bank) {
   const file = bank.file;
   let data = null;
   try {
-    data = await readBuiltinFile(builtinUrl(`${file}.gz?v=3`), true);
+    data = await readBuiltinFile(builtinUrl(`${file}.gz?v=3`));
   } catch (error) {
     console.warn("[题库] 分卷压缩包读取失败，退回纯文本", bank.id, error);
   }
-  if (!data) data = await readBuiltinFile(builtinUrl(`${file}?v=3`), false);
+  if (!data) data = await readBuiltinFile(builtinUrl(`${file}?v=3`));
   const list = Array.isArray(data?.questions) ? data.questions : [];
   bank.questions = applyCorrections(
     toQuizQuestions({ id: bank.id, name: bank.name, source: "builtin", questions: list }),
