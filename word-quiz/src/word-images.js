@@ -1,5 +1,6 @@
-// Word 公式图片匹配：按题目段落范围内的图片顺序，尽量填入题干/选项中的公式占位符。
-// 与原先“必须不多不少刚好匹配”不同，这里允许图片多于或少于占位符，避免整题回退。
+// Word 公式图片匹配：按「题号所在页 + 顺序游标」把图片依次填入题干 / 选项 / 答案 / 解析。
+// 试卷里的公式图大多是浮动图，锚定在每页第一个段落上，和题号所在段落往往不在同一段，
+// 只按“段落区间”取图会让跨页的题目（题号正好在页首附近）拿不到自己那一页的公式。
 import { formulaCount } from "../../src/question-text.js";
 
 // 公式图片通常很矮；过滤掉关系图/装置图等大图，避免占用公式占位符。
@@ -9,65 +10,97 @@ function isFormulaImage(image) {
   return image.height > 0 && image.height <= FORMULA_IMAGE_MAX_HEIGHT;
 }
 
-function imagesInRange(imagePages, start, end) {
-  const items = [];
-  imagePages.forEach((page, pageIndex) => {
-    if (page.paragraphIndex < start || page.paragraphIndex >= end) return;
-    page.rows.forEach((row, rowIndex) => {
-      row.images.filter(isFormulaImage).forEach((image) => {
-        items.push({ image, page: pageIndex, row: rowIndex });
-      });
-    });
-  });
-  return items;
-}
-
-function imagesFromCursor(imagePages, cursor) {
-  const items = [];
-  for (let pageIndex = Math.max(0, cursor.page); pageIndex < imagePages.length; pageIndex += 1) {
-    const page = imagePages[pageIndex];
-    page.rows.forEach((row, rowIndex) => {
-      if (pageIndex === cursor.page && rowIndex < cursor.row) return;
-      row.images.filter(isFormulaImage).forEach((image) => {
-        items.push({ image, page: pageIndex, row: rowIndex });
-      });
-    });
-  }
-  return items;
-}
-
+/** 按文中出现顺序排列的填图目标：题干 → 选项 → 答案 → 解析 */
 function buildTargets(question) {
-  const targets = [{ text: question.title, setImages: (images) => (question.titleImages = images) }];
-  (question.options || []).forEach((option) => {
-    targets.push({ text: option.content, setImages: (images) => (option.formulaImages = images) });
-  });
-  return targets
+  return [
+    { text: question.title, setImages: (images) => (question.titleImages = images) },
+    ...(question.options || []).map((option) => ({
+      text: option.content,
+      setImages: (images) => (option.formulaImages = images),
+    })),
+    { text: question.answerText || "", setImages: (images) => (question.answerTextImages = images) },
+    { text: question.explanation || "", setImages: (images) => (question.explanationImages = images) },
+  ]
     .map((target) => ({ ...target, count: formulaCount(target.text) }))
     .filter((target) => target.count > 0);
 }
 
-export function matchQuestionImages(question, imagePages, cursor, paragraphRange = null) {
-  const targets = buildTargets(question);
-  if (!targets.length) return null;
-
-  const items = paragraphRange
-    ? imagesInRange(imagePages, paragraphRange.start, paragraphRange.end)
-    : imagesFromCursor(imagePages, cursor);
-
-  let offset = 0;
-  let last = null;
-  for (const target of targets) {
-    const take = items.slice(offset, offset + target.count);
-    if (take.length) {
-      target.setImages(take.map((item) => item.image));
-      last = take[take.length - 1];
-      offset += take.length;
-    }
-  }
-  if (!last) return null;
-  return { page: last.page, row: last.row + 1 };
+/** 段落落在哪一页：页锚段落 ≤ 段落号的最后一页 */
+export function pageOfParagraph(imagePages, paragraphIndex) {
+  let found = 0;
+  imagePages.forEach((page, index) => {
+    if (page.paragraphIndex <= paragraphIndex) found = index;
+  });
+  return found;
 }
 
+/**
+ * 从游标开始顺序取公式图片，最多 count 张，且不越过 endPage。
+ * 游标是 { page, row, index }，index 表示行内取到第几张——同一行可能并排多张公式图。
+ */
+export function takeFormulaImages(imagePages, cursor, endPage, count) {
+  const images = [];
+  let page = cursor.page;
+  let row = cursor.row;
+  let index = cursor.index || 0;
+  let last = null;
+
+  while (images.length < count && page <= endPage && page < imagePages.length) {
+    const rows = imagePages[page].rows || [];
+    if (row >= rows.length) {
+      page += 1;
+      row = 0;
+      index = 0;
+      continue;
+    }
+    const list = rows[row].images.filter(isFormulaImage);
+    while (images.length < count && index < list.length) {
+      images.push(list[index]);
+      last = { page, row, index };
+      index += 1;
+    }
+    if (images.length < count) {
+      row += 1;
+      index = 0;
+    }
+  }
+
+  return {
+    images,
+    cursor: last ? { page: last.page, row: last.row, index: last.index + 1 } : { page, row, index },
+  };
+}
+
+/**
+ * 给整份题库分配公式图片。
+ * @param {Array} questions 解析出的题目（带 number / title / options / answerText / explanation）
+ * @param {Array} imagePages [{ paragraphIndex, rows: [{ y, images }] }]
+ * @param {Map<Number, Number>} questionStarts 题号 → 题号所在顶层段落下标
+ * @param {Number} paragraphCount 正文顶层段落总数
+ */
+export function assignFormulaImages(questions, imagePages, questionStarts, paragraphCount) {
+  if (!imagePages.length) return;
+  const lastPage = imagePages.length - 1;
+  let cursor = { page: 0, row: 0 };
+
+  questions.forEach((question) => {
+    const start = questionStarts?.get(question.number);
+    const end = questionStarts?.get(question.number + 1);
+    // 题号所在页：题目常从这一页的中段开始，图片却锚在页首段落上
+    const startPage = start === undefined ? cursor.page : pageOfParagraph(imagePages, start);
+    const endPage = end === undefined ? lastPage : pageOfParagraph(imagePages, end);
+    // 游标只前进：上一题没用完的本页图片归上一题，本题从自己那一页重新开始
+    if (cursor.page < startPage) cursor = { page: startPage, row: 0 };
+
+    for (const target of buildTargets(question)) {
+      const result = takeFormulaImages(imagePages, cursor, endPage, target.count);
+      target.setImages(result.images);
+      cursor = result.cursor;
+    }
+  });
+}
+
+/** 仪器/实验表格的大图：单独按尺寸匹配，不占用公式占位符 */
 export function matchQuestionSourceTable(question, imagePages, cursor) {
   if (!question.sourceTable) return null;
 
@@ -88,37 +121,4 @@ export function matchQuestionSourceTable(question, imagePages, cursor) {
     }
   }
   return null;
-}
-
-export function collectExplanationImages(question, imagePages, cursor, endCursor) {
-  let remaining = formulaCount(question.explanation);
-  if (!remaining) return cursor;
-
-  const images = [];
-  let page = cursor.page;
-  let row = cursor.row;
-  while (
-    page < imagePages.length &&
-    remaining > 0 &&
-    (page < endCursor.page || (page === endCursor.page && row < endCursor.row))
-  ) {
-    const rows = imagePages[page].rows;
-    while (
-      row < rows.length &&
-      remaining > 0 &&
-      (page < endCursor.page || (page === endCursor.page && row < endCursor.row))
-    ) {
-      const rowImages = rows[row].images;
-      images.push(...rowImages);
-      remaining -= rowImages.length;
-      row += 1;
-    }
-    if (remaining > 0) {
-      page += 1;
-      row = 0;
-    }
-  }
-
-  question.explanationImages = images;
-  return { page, row };
 }

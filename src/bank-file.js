@@ -72,6 +72,7 @@ export function toCanonicalQuestion(raw, index) {
     images: readImages(raw.images),
     explanationImages: readImages(raw.explanationImages),
     titleImages: readImages(raw.titleImages),
+    answerTextImages: readImages(raw.answerTextImages),
     tableImage: raw.tableImage ? readImages([raw.tableImage])[0] || null : null,
     sourceTable: raw.sourceTable ? String(raw.sourceTable) : "",
   };
@@ -154,6 +155,7 @@ export function toWordQuestions(questions) {
       explanation: question.explanation,
       explanationImages: question.explanationImages.map((image) => ({ src: image.dataUrl })),
       titleImages: [...question.images, ...question.titleImages].map((image) => ({ src: image.dataUrl })),
+      answerTextImages: (question.answerTextImages || []).map((image) => ({ src: image.dataUrl })),
       tableImage: question.tableImage ? { src: question.tableImage.dataUrl } : undefined,
       sourceTable: question.sourceTable,
     };

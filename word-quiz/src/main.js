@@ -23,11 +23,7 @@ import {
   localName,
   readRelationships,
 } from "./word-docx.js";
-import {
-  collectExplanationImages,
-  matchQuestionImages,
-  matchQuestionSourceTable,
-} from "./word-images.js";
+import { assignFormulaImages, matchQuestionSourceTable } from "./word-images.js";
 
 document.documentElement.classList.toggle("embedded", new URLSearchParams(location.search).has("embedded"));
 
@@ -80,6 +76,7 @@ const ui = {
   docMissing: byId("doc-missing"),
   docHint: byId("doc-hint"),
   docLocate: byId("doc-locate"),
+  docScope: byId("doc-scope"),
   deleteBank: byId("delete-bank"),
   bankLibrary: byId("bankLibrary"),
   bankCount: byId("bankCount"),
@@ -102,6 +99,9 @@ const state = {
   proofreading: false,
   documentHtml: "",
   documentName: "",
+  // 原文预览按段落切块，默认只渲染本题所在片段，避免整篇 Word 撑长页面
+  docBlocks: [],
+  docFull: false,
   // 校对前的解析结果快照，用于「恢复解析结果」
   originals: new Map(),
 };
@@ -113,6 +113,8 @@ const FORMULA_SPACING_MAX = 1100;
 const FORMULA_IMAGE_ROW_TOLERANCE = 3;
 const TYPE_LABELS = { single: "单选题", multiple: "多选题", subjective: "主观题" };
 const OPTION_KEYS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+// 原文里定位不到本题时，最多展示的段落数
+const DOC_FALLBACK_BLOCKS = 24;
 const FORMULA_PLACEHOLDER = "〔公式〕";
 const EMU_PER_POINT = 12700;
 
@@ -206,7 +208,7 @@ function questionParagraphIndexes(xml) {
     const match = paragraphText(child).match(/^\s*(\d{1,2})\s*[.．、]\s*/);
     if (match) indexes.set(Number(match[1]), index);
   });
-  return indexes;
+  return { indexes, paragraphCount: body.children.length };
 }
 
 function styleLength(style, property) {
@@ -341,33 +343,18 @@ async function loadWord(file) {
   const result = parseQuestionBank(extractDocumentText(xml));
   const paragraphIndexes = questionParagraphIndexes(xml);
   const { pages, unresolvedImages } = await extractFormulaImagePages(zip, xml);
-  let cursor = { page: 0, row: 0 };
-  const questionImagePositions = result.questions.map(() => null);
-  for (const [index, question] of result.questions.entries()) {
-    const nextQuestionIndex = paragraphIndexes.get(question.number + 1) ?? Number.POSITIVE_INFINITY;
-    const questionRange = paragraphIndexes.has(question.number)
-      ? { start: paragraphIndexes.get(question.number), end: nextQuestionIndex }
-      : null;
-    const match =
-      matchQuestionSourceTable(question, pages, cursor) ||
-      (questionRange && matchQuestionImages(question, pages, cursor, questionRange)) ||
-      matchQuestionImages(question, pages, cursor);
-    if (!match) continue;
-    questionImagePositions[index] = match;
-    cursor = match;
+
+  // 仪器/实验表格是按尺寸匹配的大图，先单独挑出来，避免被当成公式图片
+  let tableCursor = { page: 0, row: 0 };
+  for (const question of result.questions) {
+    const match = matchQuestionSourceTable(question, pages, tableCursor);
+    if (match) tableCursor = match;
   }
 
-  cursor = { page: 0, row: 0 };
-  for (const [index, question] of result.questions.entries()) {
-    if (questionImagePositions[index]) cursor = questionImagePositions[index];
-    const nextQuestionImage = questionImagePositions.slice(index + 1).find(Boolean) || {
-      page: pages.length,
-      row: 0,
-    };
-    cursor = collectExplanationImages(question, pages, cursor, nextQuestionImage);
-  }
+  // 公式图片：按题号所在页 + 顺序游标，依次填入题干 / 选项 / 答案 / 解析
+  assignFormulaImages(result.questions, pages, paragraphIndexes.indexes, paragraphIndexes.paragraphCount);
 
-  // 原文预览：校对时左侧展示整份 Word 内容，按题号可定位
+  // 原文预览：校对时左侧按段落取用，默认只展示本题所在片段
   let documentHtml = "";
   try {
     const preview = await buildWordPreview(zip, xml);
@@ -525,7 +512,9 @@ function renderFeedback(question, response) {
         graded ? (response.correct ? "已标记为答对" : "已标记为答错") : "已提交，请对照参考答案自评"
       }</div>
       <div class="feedback-answer">参考答案：<div class="reference-text">${
-        reference ? renderFormulaContent(reference, [], FORMULA_PLACEHOLDER) : "文档未提供参考答案"
+        reference
+          ? renderFormulaContent(reference, question.answerTextImages || [], FORMULA_PLACEHOLDER)
+          : "文档未提供参考答案"
       }</div></div>
       ${explanationHtml(question)}
       <div class="self-grade"><span>你答对了吗？</span><button type="button" class="button button-quiet" data-grade="correct">答对了</button><button type="button" class="button button-quiet" data-grade="wrong">答错了</button></div>`;
@@ -604,36 +593,80 @@ function setProofreading(on) {
   renderProofread();
 }
 
+/** 原文 HTML 只解析一次，之后按段落块取用 */
+function setDocumentHtml(html, name = "") {
+  state.documentHtml = html || "";
+  state.documentName = name || "";
+  state.docBlocks = state.documentHtml ? parseDocBlocks(state.documentHtml) : [];
+}
+
+function parseDocBlocks(html) {
+  const host = document.createElement("div");
+  host.innerHTML = html;
+  return Array.from(host.querySelectorAll(".doc-block")).map((block) => ({
+    html: block.outerHTML,
+    question: Number(block.dataset.question || 0),
+    text: block.textContent.replace(/\s+/g, ""),
+  }));
+}
+
+/** 找到本题在原文里的起始段落下标，-1 表示没找到 */
+function findQuestionBlock(question) {
+  if (!question || !state.docBlocks.length) return -1;
+  const number = Number(question.number);
+  if (number > 0) {
+    const byNumber = state.docBlocks.findIndex((block) => block.question === number);
+    if (byNumber >= 0) return byNumber;
+  }
+  const key = String(question.title || "").replace(/\s+/g, "").slice(0, 10);
+  if (!key) return -1;
+  return state.docBlocks.findIndex((block) => block.text.includes(key));
+}
+
 function renderDocPreview() {
-  ui.docBody.innerHTML = state.documentHtml;
   ui.docBody.hidden = !state.documentHtml;
   ui.docMissing.hidden = Boolean(state.documentHtml);
   ui.docLocate.hidden = !state.documentHtml;
+  ui.docScope.hidden = !state.documentHtml;
+  ui.docScope.textContent = state.docFull ? "全文" : "仅看本题";
+  ui.docScope.classList.toggle("on", state.docFull);
   ui.docHint.textContent = state.documentName || "对照原文核对解析结果";
+  renderDocScope();
 }
 
-/** 在左侧原文里定位并高亮当前题目所在的段落 */
-function locateQuestionInDoc(question) {
-  if (!state.documentHtml || !question) return;
-  ui.docBody.querySelectorAll(".doc-block.active").forEach((block) => block.classList.remove("active"));
+/**
+ * 左侧只渲染当前需要的原文片段：默认本题起止的段落，切到「全文」才渲染整篇，
+ * 预览区自身固定高度内滚动，页面不会被 Word 内容撑长。
+ */
+function renderDocScope() {
+  if (!state.documentHtml) return;
+  if (!state.docBlocks.length) state.docBlocks = parseDocBlocks(state.documentHtml);
 
-  const number = Number(question.number);
-  let target = number > 0 ? ui.docBody.querySelector(`[data-question="${number}"]`) : null;
-  if (!target) {
-    const key = String(question.title || "").replace(/\s+/g, "").slice(0, 10);
-    if (key) {
-      target = Array.from(ui.docBody.querySelectorAll(".doc-block")).find((block) =>
-        block.textContent.replace(/\s+/g, "").includes(key),
-      );
-    }
+  const question = currentQuestion();
+  const found = findQuestionBlock(question);
+  let start = 0;
+  let end = Math.min(state.docBlocks.length, DOC_FALLBACK_BLOCKS);
+  if (state.docFull) {
+    end = state.docBlocks.length;
+  } else if (found >= 0) {
+    start = found;
+    end = found + 1;
+    // 一直取到下一题开头之前，把选项和解析一起带上
+    while (end < state.docBlocks.length && !state.docBlocks[end].question) end += 1;
   }
-  if (!target) {
-    ui.docHint.textContent = "原文中未能定位到本题，可手动滚动查找";
+
+  ui.docBody.innerHTML = state.docBlocks.slice(start, end).map((block) => block.html).join("");
+  ui.docBody.scrollTop = 0;
+
+  const rendered = Array.from(ui.docBody.querySelectorAll(".doc-block"));
+  const active = found >= start && found < end ? rendered[found - start] : null;
+  if (active) {
+    active.classList.add("active");
+    ui.docBody.scrollTop = Math.max(0, active.offsetTop - 12);
+    ui.docHint.textContent = `已定位第 ${Number(question?.number) || state.current + 1} 题`;
     return;
   }
-  target.classList.add("active");
-  ui.docBody.scrollTop = Math.max(0, target.offsetTop - ui.docBody.clientHeight / 3);
-  ui.docHint.textContent = `已定位第 ${number || state.current + 1} 题`;
+  ui.docHint.textContent = state.docFull ? "请手动滚动查找本题原文" : "原文中未能定位到本题，可切换「全文」查找";
 }
 
 function proofOptionRow(option, checked) {
@@ -721,7 +754,7 @@ function renderProofread() {
   renderProofImages(question);
   renderProofStatus(question);
   syncProofFields();
-  locateQuestionInDoc(question);
+  renderDocScope();
 }
 
 function readProofForm() {
@@ -955,8 +988,7 @@ async function openBank(id) {
   const savedIndex = Number(bank.progress?.current || 0);
   state.current = Math.min(Math.max(savedIndex, 0), state.questions.length - 1);
   // 本机题库只存题目，原始 Word 需要重新导入才能显示原文
-  state.documentHtml = "";
-  state.documentName = "";
+  setDocumentHtml("");
   state.originals.clear();
   setProofreading(false);
   ui.fileName.textContent = bank.fileName || `${bank.name}.docx`;
@@ -979,8 +1011,7 @@ function resetWorkspace() {
   state.questions = [];
   state.current = 0;
   state.responses.clear();
-  state.documentHtml = "";
-  state.documentName = "";
+  setDocumentHtml("");
   state.originals.clear();
   state.proofreading = false;
   ui.proofread.hidden = true;
@@ -995,8 +1026,7 @@ async function importBankFile(file) {
   state.questions = toWordQuestions(bank.questions);
   state.responses.clear();
   state.current = 0;
-  state.documentHtml = "";
-  state.documentName = "";
+  setDocumentHtml("");
   state.originals.clear();
   setProofreading(false);
   ui.fileName.textContent = `${bank.name}.json`;
@@ -1017,8 +1047,7 @@ async function startQuiz(file, result) {
   state.questions = result.questions;
   const saved = (await listBanks()).find((bank) => bank.source === "word" && bank.name === state.bankName);
   state.bankId = saved?.id || null;
-  state.documentHtml = result.documentHtml || "";
-  state.documentName = result.documentName || file.name;
+  setDocumentHtml(result.documentHtml, result.documentName || file.name);
   state.originals.clear();
   setProofreading(false);
   state.responses.clear();
@@ -1152,7 +1181,14 @@ ui.proofSave.addEventListener("click", saveProofread);
 
 ui.proofRevert.addEventListener("click", revertProofread);
 
-ui.docLocate.addEventListener("click", () => locateQuestionInDoc(currentQuestion()));
+ui.docLocate.addEventListener("click", () => renderDocScope());
+
+ui.docScope.addEventListener("click", () => {
+  state.docFull = !state.docFull;
+  ui.docScope.textContent = state.docFull ? "全文" : "仅看本题";
+  ui.docScope.classList.toggle("on", state.docFull);
+  renderDocScope();
+});
 
 ui.deleteBank.addEventListener("click", async () => {
   if (!state.bankId) {

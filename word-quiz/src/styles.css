@@ -132,33 +132,34 @@ button { color: inherit; }
 .practice-actions { display: flex; gap: 8px; }
 .list-item.reviewed .list-index { color: var(--accent); }
 
-/* 校对：左侧原文 Word，右侧解析结果 */
-.proofread { width: min(1440px, 100%); min-height: calc(100vh - 72px); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); margin: 0 auto; border-inline: 1px solid var(--line); background: #f7f9f9; }
-.proof-doc { min-width: 0; display: flex; flex-direction: column; border-right: 1px solid var(--line); background: #fff; }
-.proof-doc-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 20px 22px 14px; border-bottom: 1px solid var(--line); }
-.proof-doc-head h2 { margin: 0; font-size: 16px; }
-.proof-doc-head .eyebrow { margin-bottom: 5px; }
-.proof-doc-tools { display: flex; align-items: center; gap: 10px; }
-.proof-doc-tools .button { min-height: 30px; padding: 0 12px; font-size: 10px; }
-.doc-hint { max-width: 220px; overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
-.doc-body { position: relative; flex: 1; overflow: auto; padding: 18px 22px 40px; font-size: 13px; line-height: 1.95; }
+/* 校对：与高考题库 PDF 校对一致的弹层，左侧 Word 预览，右侧解析结果 */
+.proof-view { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; padding: 3vh 3vw; background: #16241f80; }
+.proof-layout { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(420px, .85fr); gap: 16px; width: 100%; max-height: 94vh; align-items: stretch; }
+.proof-doc-card { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; border-radius: 12px; background: #fff; box-shadow: 0 18px 45px #16241f2e; }
+.proof-doc-card > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 40px; padding: 10px 12px; border-bottom: 1px solid var(--line); color: var(--ink); font-size: 11px; }
+.proof-doc-card > header strong { font-weight: 650; }
+.proof-doc-card > header span { overflow: hidden; color: #71807a; text-overflow: ellipsis; white-space: nowrap; }
+.proof-doc-tools { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+.proof-doc-tools .button { min-height: 28px; padding: 0 10px; font-size: 10px; }
+.proof-doc-tools .button.on { color: var(--accent); border-color: #bfd6ce; background: var(--accent-soft); }
+.doc-body { position: relative; flex: 1; min-height: 200px; overflow: auto; padding: 14px 16px 28px; font-size: 13px; line-height: 1.95; }
 .doc-body p { margin: 0 0 6px; white-space: pre-wrap; }
 .doc-block { padding: 2px 6px; border-radius: 6px; }
 .doc-block.active { background: #fdf6de; box-shadow: inset 3px 0 0 #e0b657; }
 .doc-image { display: block; max-width: 100%; height: auto; margin: 3px 0; }
 .doc-table { width: 100%; margin: 6px 0 10px; border-collapse: collapse; font-size: 12px; }
 .doc-table td { padding: 5px 8px; border: 1px solid #dfe6e3; vertical-align: top; }
-.doc-missing { display: grid; gap: 12px; justify-items: start; margin: 22px; padding: 18px; border: 1px solid #eee; border-radius: 10px; background: #fbfcfc; }
+.doc-missing { display: grid; gap: 12px; justify-items: start; margin: 16px; padding: 18px; border: 1px solid #eee; border-radius: 10px; background: #fbfcfc; }
 .doc-missing p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.8; }
 
-.proof-form { min-width: 0; display: flex; flex-direction: column; }
-.proof-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 20px 22px 14px; border-bottom: 1px solid var(--line); }
+.proof-panel { display: flex; flex-direction: column; min-width: 0; min-height: 0; max-height: 94vh; overflow: hidden; border-radius: 12px; background: #fff; box-shadow: 0 18px 45px #16241f2e; }
+.proof-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 18px 12px; border-bottom: 1px solid var(--line); }
 .proof-head h2 { margin: 0; font-size: 16px; }
 .proof-head .eyebrow { margin-bottom: 5px; }
 .proof-nav { display: flex; align-items: center; gap: 8px; }
 .proof-nav .button { min-height: 30px; padding: 0 12px; font-size: 10px; }
 .proof-index { min-width: 52px; color: var(--muted); font-size: 11px; text-align: center; }
-.proof-body { flex: 1; overflow: auto; display: grid; gap: 14px; padding: 18px 22px 24px; }
+.proof-body { flex: 1; overflow: auto; display: grid; gap: 14px; padding: 16px 18px 20px; }
 .proof-field { display: grid; gap: 6px; }
 .proof-field > span { color: #53635f; font-size: 11px; font-weight: 600; }
 .proof-field textarea, .proof-field select, .proof-option-key, .proof-option-content { width: 100%; padding: 9px 11px; border: 1px solid #dfe7e4; border-radius: 8px; color: #3f4d48; background: #fff; font-family: inherit; font-size: 12px; line-height: 1.75; resize: vertical; }
@@ -207,13 +208,13 @@ button { color: inherit; }
 html.embedded body { min-height: 100%; }
 html.embedded .topbar { display: none; }
 html.embedded .workspace { min-height: 100vh; }
-html.embedded .proofread { min-height: 100vh; }
 
 @media (max-width: 1000px) {
-  .proofread { grid-template-columns: minmax(0, 1fr); border-inline: 0; }
-  .proof-doc { max-height: 45vh; border-right: 0; border-bottom: 1px solid var(--line); }
+  .proof-layout { grid-template-columns: minmax(0, 1fr); overflow-y: auto; }
+  .proof-doc-card { min-height: 42vh; }
+  .doc-body { min-height: 32vh; }
+  .proof-panel { max-height: none; }
   .proof-head { flex-wrap: wrap; }
-  .doc-hint { max-width: 140px; }
   .proof-option { grid-template-columns: 48px minmax(0, 1fr) auto; }
   .proof-option-remove { grid-column: 3; }
 }

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="在线题库刷题，内置 2026 高考化学真题，支持题目校正。" />
+    <title>题库刷题 · 试卷学习工作台</title>
+    <script type="module" crossorigin src="/assets/main-Qn16HnRq.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/modulepreload-polyfill-B5Qt9EMX.js">
+    <link rel="stylesheet" crossorigin href="/assets/main-DBtXEBaO.css">
+  </head>
+  <body>
+    <header class="workspace-header">
+      <a class="brand" href="/" aria-label="试卷学习工作台">
+        <span class="brand-mark">学</span>
+        <span><strong>试卷学习工作台</strong><small>本地导入 · 打开即练</small></span>
+      </a>
+      <nav class="mode-switch" aria-label="工作模式">
+        <button class="mode-button active" type="button" data-mode="quiz" aria-pressed="true">题库刷题</button>
+        <button class="mode-button" type="button" data-mode="word" aria-pressed="false">Word 导入</button>
+      </nav>
+      <span class="privacy-indicator"><span></span>本地处理 · 数据安全</span>
+    </header>
+    <main class="app-area">
+      <iframe id="quiz-app" class="app-frame active" title="题库刷题" src="/quiz/index.html?embedded=1"></iframe>
+      <iframe id="word-app" class="app-frame" title="Word 导入题库" src="/word-quiz/index.html?embedded=1"></iframe>
+    </main>
+  </body>
+</html>

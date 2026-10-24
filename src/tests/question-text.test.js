@@ -23,7 +23,7 @@ describe("question-text 工具函数", () => {
     const TOKEN = "\uE000";
     const images = [{ src: "data:image/png;base64,abc" }];
     const result = renderFormulaContent(`H${TOKEN}O`, images);
-    assert.ok(result.includes('<img class="formula-image formula-inline" src="data:image/png;base64,abc" alt="原文公式">'));
+    assert.ok(result.includes('<img class="formula-image formula-inline" src="data:image/png;base64,abc" alt="原文公式" draggable="false">'));
     assert.ok(result.includes("H"));
     assert.ok(result.includes("O"));
   });
