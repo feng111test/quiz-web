@@ -3,8 +3,10 @@
 
 用法（项目根目录执行）：
   npm run start:tunnel                                   # 默认 80 端口
-  npm run start:tunnel -- -Port 8080                     # 指定端口（要和 natapp 隧道的本地端口一致）
+  npm run start:tunnel -- -Port 8080                     # 指定端口（要和穿透隧道的本地端口一致）
   npm run start:tunnel -- -Build                         # 先重新打包前端
+  npm run start:tunnel -- -Tool cpolar                   # 用 cpolar（某些网络会拦 natapp，可切换）
+  npm run start:tunnel -- -Tool natapp                   # 用 natapp（已买固定域名时）
   pwsh -File deploy/start-tunnel.ps1 -Port 80 -TunnelCommand "cpolar http 80"
 
 token 从 ~/natapp/tunnels.json 按端口自动匹配，不写进项目。

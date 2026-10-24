@@ -9,14 +9,19 @@
   </head>
   <body>
     <header class="workspace-header">
-      <a class="brand" href="/" aria-label="题库刷题">
+      <a class="brand" href="/" aria-label="试卷学习工作台">
         <span class="brand-mark">学</span>
-        <span><strong>题库刷题</strong><small>题库本机保存 · 打开即练</small></span>
+        <span><strong>试卷学习工作台</strong><small>本地导入 · 打开即练</small></span>
       </a>
-      <span class="privacy-indicator"><span></span>题库已永久保存</span>
+      <nav class="mode-switch" aria-label="工作模式">
+        <button class="mode-button active" type="button" data-mode="quiz" aria-pressed="true">题库刷题</button>
+        <button class="mode-button" type="button" data-mode="word" aria-pressed="false">Word 导入</button>
+      </nav>
+      <span class="privacy-indicator"><span></span>本地处理 · 数据安全</span>
     </header>
     <main class="app-area">
       <iframe id="quiz-app" class="app-frame active" title="题库刷题" src="/quiz/index.html?embedded=1"></iframe>
+      <iframe id="word-app" class="app-frame" title="Word 导入题库" src="/word-quiz/index.html?embedded=1"></iframe>
     </main>
     <script type="module" src="/workspace.js"></script>
   </body>

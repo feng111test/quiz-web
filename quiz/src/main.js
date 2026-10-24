@@ -27,6 +27,8 @@ const SETTINGS_KEY = "exam-workspace:quiz:settings";
 const SCOPES = ["all", "unanswered", "wrong", "flagged"];
 const QTYPE_MODES = ["all", "objective", "subjective"];
 const TYPE_LABELS = { single: "单选题", multiple: "多选题", judge: "判断题", subjective: "主观题" };
+const SCOPE_LABELS = { all: "全部", unanswered: "未答", wrong: "错题", flagged: "标记" };
+const QTYPE_LABELS = { all: "全部", objective: "客观题", subjective: "主观题" };
 
 const byId = (id) => document.getElementById(id);
 const ui = {
@@ -367,7 +369,13 @@ async function applyServerCorrections(bank) {
 }
 
 async function ensureQuestions(bankIds) {
-  const pending = state.banks.filter((bank) => bankIds.includes(bank.id) && bank.file);
+  const pending = state.banks.filter((bank) => {
+    if (!bankIds.includes(bank.id)) return false;
+    if (bank.questions.length) return false;
+    // 上次加载失败会清掉题目，这里按索引把文件名取回来，保证还能再次下载重试
+    if (!bank.file) bank.file = builtinFileMap.get(bank.id);
+    return Boolean(bank.file);
+  });
   if (!pending.length) return;
   showToast(`正在加载 ${pending.length} 份题库…`);
   await Promise.all(
@@ -377,7 +385,7 @@ async function ensureQuestions(bankIds) {
       } catch (error) {
         console.warn("[题库] 分卷加载失败", bank.id, error);
         showToast(`${bank.name} 加载失败：${error.message || "请刷新重试"}`);
-        bank.file = undefined;
+        // 只清空题目，保留 bank.file：下次点击可以重新下载
         bank.questionCount = 0;
         bank.questions = [];
       }
@@ -840,12 +848,20 @@ async function locateQuestion(bankId, questionId) {
   return true;
 }
 
+function emptyPoolMessage(bankIds, scope, qtype) {
+  const loaded = state.banks
+    .filter((bank) => bankIds.includes(bank.id))
+    .reduce((sum, bank) => sum + bank.questions.length, 0);
+  if (!loaded) return "这份卷的题目还没加载成功，请刷新页面后重试";
+  return `已加载 ${loaded} 题，但「${SCOPE_LABELS[scope] || scope} · ${QTYPE_LABELS[qtype] || qtype}」范围内没有可练的题目`;
+}
+
 async function startPool(bankIds, scope, qtype) {
   // 内置真题在这里才真正下载被选中的卷
   await ensureQuestions(bankIds);
   const pool = buildPool(bankIds, scope, qtype);
   if (!pool.length) {
-    showToast("当前范围内没有可练习的题目");
+    showToast(emptyPoolMessage(bankIds, scope, qtype));
     return false;
   }
   state.selected = new Set(bankIds);

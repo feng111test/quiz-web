@@ -14,6 +14,7 @@ import {
   formulaCount,
   renderFormulaContent,
 } from "../../src/question-text.js";
+import { parseQuestionBank } from "./word-parser.js";
 
 document.documentElement.classList.toggle("embedded", new URLSearchParams(location.search).has("embedded"));
 
@@ -69,6 +70,7 @@ const WORD_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingm
 const FORMULA_SPACING_MIN = 150;
 const FORMULA_SPACING_MAX = 1100;
 const FORMULA_IMAGE_ROW_TOLERANCE = 3;
+const TYPE_LABELS = { single: "单选题", multiple: "多选题", subjective: "主观题" };
 
 function showToast(message) {
   ui.toast.textContent = message;
@@ -167,184 +169,6 @@ function questionParagraphIndexes(xml) {
     if (match) indexes.set(Number(match[1]), index);
   });
   return indexes;
-}
-
-function splitNumberedQuestions(text) {
-  const lines = text.replace(/\r\n?/g, "\n").split("\n");
-  const choiceSection = lines.findIndex((line) => /^[一二三四五六七八九十]+、.*选择题/.test(line.trim()));
-  const first = lines.findIndex(
-    (line, index) => index > choiceSection && /^\s*1\s*[.．、]\s*/.test(line),
-  );
-  if (first < 0) throw new Error("没有识别到从“1.”开始编号的题目");
-
-  const blocks = [];
-  let current = [];
-  let expected = 1;
-  for (const line of lines.slice(first)) {
-    const match = line.match(/^\s*(\d{1,2})\s*[.．、]\s*(.*)$/);
-    if (match && Number(match[1]) === expected) {
-      if (current.length) blocks.push(current.join("\n"));
-      current = [match[2]];
-      expected += 1;
-    } else {
-      current.push(line);
-    }
-  }
-  if (current.length) blocks.push(current.join("\n"));
-  return blocks;
-}
-
-function answerFromLine(line) {
-  const match = line.match(
-    /[【\[（(]?\s*(?:参考答案|正确答案|标准答案|答案)\s*[】\]）)]?\s*[：:＝=]?\s*([A-FＡ-Ｆ](?:[\s,，、和及与]*[A-FＡ-Ｆ])*)/i,
-  );
-  if (!match) return null;
-  const answer = match[1]
-    .replace(/[Ａ-Ｆ]/g, (letter) => String.fromCharCode(letter.charCodeAt(0) - 0xfee0))
-    .match(/[A-F]/gi);
-  return answer ? [...new Set(answer.map((letter) => letter.toUpperCase()))] : null;
-}
-
-function optionMarkers(line) {
-  const markers = [];
-  const pattern = /([A-FＡ-Ｆ])\s*[.．、:：]\s*/gi;
-  let match;
-  while ((match = pattern.exec(line))) {
-    const key = match[1].replace(/[Ａ-Ｆ]/g, (letter) =>
-      String.fromCharCode(letter.charCodeAt(0) - 0xfee0),
-    ).toUpperCase();
-    markers.push({ key, start: match.index, end: pattern.lastIndex });
-  }
-  return markers;
-}
-
-function parseChoices(lines) {
-  const title = [];
-  const options = [];
-  const optionKeys = new Set();
-  let readingOptions = false;
-
-  for (const rawLine of lines) {
-    const line = rawLine.trim();
-    if (!line) continue;
-    const markers = optionMarkers(line);
-    const consecutive =
-      markers.length >= 2 &&
-      markers.every((marker, index) => index === 0 || marker.key.charCodeAt(0) === markers[index - 1].key.charCodeAt(0) + 1);
-
-    if (consecutive) {
-      const prefix = line.slice(0, markers[0].start).trim();
-      if (prefix) title.push(prefix);
-      markers.forEach((marker, index) => {
-        const end = markers[index + 1]?.start ?? line.length;
-        const content = line.slice(marker.end, end).trim();
-        if (content && !optionKeys.has(marker.key)) {
-          options.push({ key: marker.key, content });
-          optionKeys.add(marker.key);
-        }
-      });
-      readingOptions = true;
-      continue;
-    }
-
-    const single = line.match(/^\s*([A-FＡ-Ｆ])(?:\s*[.．、:：]|\s+)\s*(.+)$/i);
-    if (single && (readingOptions || single[1].toUpperCase() === "A")) {
-      const key = single[1].replace(/[Ａ-Ｆ]/g, (letter) =>
-        String.fromCharCode(letter.charCodeAt(0) - 0xfee0),
-      ).toUpperCase();
-      if (!optionKeys.has(key)) {
-        options.push({ key, content: single[2].trim() });
-        optionKeys.add(key);
-      } else {
-        title.push(line);
-      }
-      readingOptions = true;
-      continue;
-    }
-
-    if (readingOptions && options.length) {
-      options[options.length - 1].content += `\n${line}`;
-      continue;
-    }
-
-    title.push(line);
-  }
-
-  options.sort((a, b) => a.key.localeCompare(b.key));
-  return { title: title.join("\n").trim(), options };
-}
-
-function parseInstrumentTable(lines) {
-  const headerIndex = lines.findIndex((line) => line.includes("实验内容") && line.includes("仪器或材料"));
-  if (headerIndex < 0) return null;
-
-  const text = lines.join("");
-  const requiredContent = [
-    "灼烧海带",
-    "坩埚、泥三角",
-    "加热浓缩",
-    "表面皿、玻璃棒",
-    "称量",
-    "电子天平、称量纸",
-    "量取",
-    "移液管、锥",
-  ];
-  if (!requiredContent.every((part) => text.includes(part))) return null;
-
-  return {
-    title: lines.slice(0, headerIndex).join("\n").trim(),
-    options: [
-      { key: "A", content: "灼烧海带；坩埚、泥三角" },
-      { key: "B", content: "加热浓缩 NaCl 溶液；表面皿、玻璃棒" },
-      { key: "C", content: "称量 5.0g NaOH 固体；电子天平、称量纸" },
-      { key: "D", content: "量取稀溶液；移液管、锥形瓶" },
-    ],
-    sourceTable: true,
-  };
-}
-
-function parseQuestion(block, number) {
-  const lines = block.split("\n");
-  const answerIndex = lines.findIndex((line) => answerFromLine(line));
-  if (answerIndex < 0) return null;
-  const answer = answerFromLine(lines[answerIndex]);
-  const analysisIndex = lines.findIndex(
-    (line, index) => index > answerIndex && /【\s*(?:解析|答案解析|试题解析|详解)\s*】/.test(line),
-  );
-  const choiceLines = lines.slice(0, answerIndex);
-  const parsed = parseInstrumentTable(choiceLines) || parseChoices(choiceLines);
-  if (!parsed.title || parsed.options.length < 2) return null;
-
-  const explanationLines =
-    analysisIndex < 0
-      ? []
-      : lines.slice(analysisIndex).map((line) => line.replace(/^[【\[（(]\s*(?:解析|答案解析|试题解析|详解|分析|详解)\s*[】\]）)]?\s*[：:＝=]?\s*/, ""));
-
-  return {
-    id: `question-${number}`,
-    number,
-    title: parsed.title,
-    options: parsed.options,
-    sourceTable: parsed.sourceTable,
-    answer: answer.sort(),
-    type: answer.length > 1 ? "multiple" : "single",
-    explanation: explanationLines.join("\n").trim(),
-  };
-}
-
-function parseQuestionBank(text) {
-  const blocks = splitNumberedQuestions(text);
-  const questions = [];
-  const skipped = [];
-  blocks.forEach((block, index) => {
-    const question = parseQuestion(block, index + 1);
-    if (question) questions.push(question);
-    else skipped.push(index + 1);
-  });
-  if (!questions.length) {
-    throw new Error("没有解析到带选项和标准答案的选择题，请确认文档包含答案解析");
-  }
-  return { questions, skipped };
 }
 
 function zipPathForWordTarget(target) {
@@ -615,7 +439,7 @@ function currentQuestion() {
 
 function responseFor(question) {
   if (!state.responses.has(question.id)) {
-    state.responses.set(question.id, { selected: [], submitted: false, correct: false });
+    state.responses.set(question.id, { selected: [], text: "", submitted: false, correct: null });
   }
   return state.responses.get(question.id);
 }
@@ -624,12 +448,30 @@ function sameAnswer(left, right) {
   return left.length === right.length && [...left].sort().every((key, index) => key === [...right].sort()[index]);
 }
 
+/** 主观题的参考答案：Word 解析结果用 answerText，导入的题库用 answer 数组 */
+function referenceAnswerText(question) {
+  if (typeof question.answerText === "string" && question.answerText.trim()) {
+    return question.answerText.trim();
+  }
+  return (question.answer || [])
+    .map((item) => String(item ?? "").trim())
+    .filter(Boolean)
+    .join("、");
+}
+
+function responseState(response) {
+  if (!response.submitted) return "";
+  if (response.correct === true) return "correct";
+  if (response.correct === false) return "wrong";
+  return "pending";
+}
+
 function renderList() {
   ui.questionList.innerHTML = state.questions
     .map((question, index) => {
       const response = responseFor(question);
-      const status = response.submitted ? (response.correct ? "correct" : "wrong") : "";
-      const mark = response.submitted ? (response.correct ? "✓" : "·") : "";
+      const status = responseState(response);
+      const mark = !response.submitted ? "" : response.correct === true ? "✓" : response.correct === false ? "✗" : "?";
       return `<button class="list-item ${index === state.current ? "active" : ""} ${status}" data-index="${index}" type="button">
         <span class="list-index">${String(index + 1).padStart(2, "0")}</span>
         <span class="list-title">${renderFormulaContent(question.title, question.titleImages)}</span>
@@ -648,6 +490,18 @@ function renderList() {
 
 function renderOptions(question, response) {
   const isSubmitted = response.submitted;
+  if (question.type === "subjective") {
+    ui.options.innerHTML = `<div class="subjective-answer">
+      <textarea class="subjective-input" rows="6" placeholder="在这里作答（填空题 / 解答题）" ${isSubmitted ? "disabled" : ""}>${escapeHtml(response.text || "")}</textarea>
+    </div>`;
+    const input = ui.options.querySelector(".subjective-input");
+    if (input && !isSubmitted) {
+      input.addEventListener("input", () => {
+        response.text = input.value;
+      });
+    }
+    return;
+  }
   ui.options.innerHTML = question.options
     .map((option) => {
       const selected = response.selected.includes(option.key);
@@ -686,6 +540,25 @@ function renderOptions(question, response) {
   });
 }
 
+function explanationHtml(question) {
+  const gallery = question.explanationImages?.length
+    ? `<div class="formula-source"><strong>Word 原文公式图片</strong><div class="formula-gallery">${question.explanationImages
+        .map(
+          (image, index) =>
+            `<img class="formula-image" src="${escapeHtml(image.src)}" alt="Word 原文公式 ${index + 1}">`,
+        )
+        .join("")}</div></div>`
+    : "";
+  if (!question.explanation) {
+    return `<div class="feedback-explanation"><p>文档未提供解析。</p></div>`;
+  }
+  return `<div class="feedback-explanation"><strong>解析</strong><p>${renderFormulaContent(
+    question.explanation,
+    [],
+    question.explanationImages?.length ? "原文公式见下方" : "原文公式图片未能匹配",
+  )}</p>${gallery}</div>`;
+}
+
 function renderFeedback(question, response) {
   if (!response.submitted) {
     ui.feedback.hidden = true;
@@ -693,33 +566,46 @@ function renderFeedback(question, response) {
     ui.feedback.innerHTML = "";
     return;
   }
-  const answer = question.answer.join("、");
-  ui.feedback.hidden = false;
-  ui.feedback.className = `feedback ${response.correct ? "feedback-correct" : "feedback-wrong"}`;
-  ui.feedback.innerHTML = `
-    <div class="feedback-heading">${response.correct ? "回答正确" : "再接再厉"}</div>
-    <div class="feedback-answer">正确答案：<strong>${escapeHtml(answer)}</strong></div>
-    ${
-      question.explanation
-        ? `<div class="feedback-explanation"><strong>解析</strong><p>${renderFormulaContent(question.explanation, [], question.explanationImages?.length ? "原文公式见下方" : "原文公式图片未能匹配")}</p>
-          ${
-            question.explanationImages?.length
-              ? `<div class="formula-source"><strong>Word 原文公式图片</strong><div class="formula-gallery">${question.explanationImages
-                  .map(
-                    (image, index) =>
-                      `<img class="formula-image" src="${escapeHtml(image.src)}" alt="Word 原文公式 ${index + 1}">`,
-                  )
-                  .join("")}</div></div>`
-              : ""
-          }</div>`
-        : '<div class="feedback-explanation"><p>文档未提供解析。</p></div>'
+
+  if (question.type === "subjective") {
+    const reference = referenceAnswerText(question);
+    const graded = response.correct === true || response.correct === false;
+    ui.feedback.hidden = false;
+    ui.feedback.className = `feedback ${
+      graded ? (response.correct ? "feedback-correct" : "feedback-wrong") : "feedback-pending"
     }`;
+    ui.feedback.innerHTML = `
+      <div class="feedback-heading">${
+        graded ? (response.correct ? "已标记为答对" : "已标记为答错") : "已提交，请对照参考答案自评"
+      }</div>
+      <div class="feedback-answer">参考答案：<div class="reference-text">${
+        reference ? escapeHtml(reference) : "文档未提供参考答案"
+      }</div></div>
+      ${explanationHtml(question)}
+      <div class="self-grade"><span>你答对了吗？</span><button type="button" class="button button-quiet" data-grade="correct">答对了</button><button type="button" class="button button-quiet" data-grade="wrong">答错了</button></div>`;
+    ui.feedback.querySelectorAll("[data-grade]").forEach((button) => {
+      button.addEventListener("click", () => {
+        response.correct = button.dataset.grade === "correct";
+        render();
+        schedulePersist();
+      });
+    });
+    return;
+  }
+
+  const answer = (question.answer || []).join("、");
+  ui.feedback.hidden = false;
+  ui.feedback.className = `feedback ${response.correct === true ? "feedback-correct" : "feedback-wrong"}`;
+  ui.feedback.innerHTML = `
+    <div class="feedback-heading">${response.correct === true ? "回答正确" : "再接再厉"}</div>
+    <div class="feedback-answer">正确答案：<strong>${escapeHtml(answer)}</strong></div>
+    ${explanationHtml(question)}`;
 }
 
 function renderStats() {
   const total = state.questions.length;
   const answered = [...state.responses.values()].filter((response) => response.submitted).length;
-  const correct = [...state.responses.values()].filter((response) => response.submitted && response.correct).length;
+  const correct = [...state.responses.values()].filter((response) => response.submitted && response.correct === true).length;
   const percent = answered ? Math.round((correct / answered) * 100) : 0;
   ui.progressText.textContent = `${state.current + 1} / ${total}`;
   ui.answeredText.textContent = String(answered);
@@ -734,7 +620,7 @@ function render() {
   const response = responseFor(question);
 
   ui.number.textContent = `第 ${state.current + 1} 题`;
-  ui.type.textContent = question.type === "multiple" ? "多选题" : "单选题";
+  ui.type.textContent = TYPE_LABELS[question.type] || "单选题";
   ui.title.innerHTML = renderFormulaContent(question.title, question.titleImages);
   ui.sourceTable.hidden = !question.sourceTable;
   ui.sourceTable.innerHTML = question.tableImage
@@ -847,7 +733,7 @@ async function openBank(id) {
   const savedIndex = Number(bank.progress?.current || 0);
   state.current = Math.min(Math.max(savedIndex, 0), state.questions.length - 1);
   ui.fileName.textContent = bank.fileName || `${bank.name}.docx`;
-  ui.fileMeta.textContent = `${state.questions.length} 道选择题 · 来自本机题库`;
+  ui.fileMeta.textContent = `${state.questions.length} 道题目 · 来自本机题库`;
   ui.bankName.textContent = bank.name;
   ui.listCount.textContent = String(state.questions.length);
   ui.skippedNote.hidden = true;
@@ -878,7 +764,7 @@ async function importBankFile(file) {
   state.responses.clear();
   state.current = 0;
   ui.fileName.textContent = `${bank.name}.json`;
-  ui.fileMeta.textContent = `${state.questions.length} 道选择题 · 来自导入的题库文件`;
+  ui.fileMeta.textContent = `${state.questions.length} 道题目 · 来自导入的题库文件`;
   ui.bankName.textContent = bank.name;
   ui.listCount.textContent = String(state.questions.length);
   ui.skippedNote.hidden = true;
@@ -902,12 +788,12 @@ async function startQuiz(file, result) {
   const savedIndex = Number(saved?.progress?.current || 0);
   state.current = Math.min(Math.max(savedIndex, 0), state.questions.length - 1);
   ui.fileName.textContent = file.name;
-  ui.fileMeta.textContent = `${Math.ceil(file.size / 1024)} KB · ${state.questions.length} 道选择题`;
+  ui.fileMeta.textContent = `${Math.ceil(file.size / 1024)} KB · ${state.questions.length} 道题目`;
   ui.bankName.textContent = state.bankName;
   ui.listCount.textContent = String(state.questions.length);
   const notes = [];
   if (result.skipped.length) {
-    notes.push(`未导入第 ${result.skipped.join("、")} 题：缺少选项或可识别答案（通常为填空/解答题）。`);
+    notes.push(`未导入第 ${result.skipped.join("、")} 题：未能识别到题干内容。`);
   }
   if (result.unresolvedImages) {
     notes.push(`${result.unresolvedImages} 张 Word 图片无法读取，含公式图片的题目请核对原文。`);
@@ -918,7 +804,7 @@ async function startQuiz(file, result) {
   ui.workspace.hidden = false;
   render();
   await persistBank();
-  showToast(`已解析 ${state.questions.length} 道选择题，已存入题库`);
+  showToast(`已解析 ${state.questions.length} 道题目，已存入题库`);
 }
 
 ui.input.addEventListener("change", async (event) => {
@@ -941,6 +827,17 @@ ui.input.addEventListener("change", async (event) => {
 ui.submit.addEventListener("click", () => {
   const question = currentQuestion();
   const response = responseFor(question);
+  if (question.type === "subjective") {
+    if (!(response.text || "").trim()) {
+      showToast("请先填写答案");
+      return;
+    }
+    response.submitted = true;
+    response.correct = null;
+    render();
+    schedulePersist();
+    return;
+  }
   if (!response.selected.length) {
     showToast("请先选择答案");
     return;

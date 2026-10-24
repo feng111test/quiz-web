@@ -108,8 +108,17 @@ button { color: inherit; }
 .feedback { margin-top: 19px; padding: 15px; border-radius: 8px; }
 .feedback-correct { color: #39754f; background: #f0f8f2; }
 .feedback-wrong { color: #936357; background: #fff5f1; }
+.feedback-pending { color: #8a6a2f; background: #fbf6ea; }
 .feedback-heading { margin-bottom: 7px; font-size: 13px; font-weight: 700; }
 .feedback-answer { font-size: 11px; }
+.reference-text { margin-top: 5px; color: #4c5b54; font-size: 11px; line-height: 1.8; white-space: pre-wrap; }
+.self-grade { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 12px; font-size: 11px; }
+.self-grade .button { min-height: 30px; padding: 0 12px; font-size: 11px; }
+.subjective-answer { display: flex; flex-direction: column; }
+.subjective-input { width: 100%; min-height: 140px; padding: 11px 13px; border: 1px solid #dfe7e4; border-radius: 8px; color: #3f4d48; background: #fff; font-family: inherit; font-size: 12px; line-height: 1.75; resize: vertical; }
+.subjective-input:focus { outline: none; border-color: #86b99b; box-shadow: 0 0 0 3px #e4f1ea; }
+.subjective-input:disabled { color: #5b675f; background: #f6f9f7; }
+.list-item.pending .list-mark { color: #b9944a; }
 .feedback-explanation { margin-top: 12px; padding-top: 11px; border-top: 1px solid #00000012; }
 .feedback-explanation strong { font-size: 10px; }
 .feedback-explanation p { margin: 5px 0 0; color: #596963; font-size: 11px; line-height: 1.85; white-space: pre-wrap; }

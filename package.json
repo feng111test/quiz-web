@@ -14,6 +14,7 @@
     "start:lan": "pwsh -NoProfile -File deploy/start-lan.ps1",
     "start:tunnel": "pwsh -NoProfile -File deploy/start-tunnel.ps1",
     "stop:tunnel": "pwsh -NoProfile -File deploy/stop-tunnel.ps1",
+    "check:network": "pwsh -NoProfile -File deploy/check-network.ps1",
     "backup:db": "pwsh -NoProfile -File deploy/backup-db.ps1",
     "seed": "node server/seed-cli.js",
     "test": "node --test --test-concurrency=1",
