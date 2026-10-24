@@ -20,7 +20,7 @@ export function renderFormulaContent(text, images = [], fallback = FORMULA_FALLB
     .map((part, index) => {
       const image = images[index];
       const formula = image
-        ? `<img class="formula-image formula-inline" src="${escapeHtml(image.src)}" alt="原文公式">`
+        ? `<img class="formula-image formula-inline" src="${escapeHtml(image.src)}" alt="原文公式" draggable="false">`
         : index < parts.length - 1
           ? `<span class="formula-missing">${escapeHtml(fallback)}</span>`
           : "";

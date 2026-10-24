@@ -116,6 +116,12 @@ button { color: inherit; }
 .nav-item.correct { border-color: #b6ddc6; color: #3f7f5c; background: #f1f9f3; }
 .nav-item.wrong { border-color: #eec0b4; color: #b06c5d; background: #fdf4f1; }
 .nav-flag { position: absolute; top: 2px; right: 4px; color: #d8a94f; font-size: 8px; font-style: normal; }
+/* 左侧答题卡按题型分组：每组一个标题 + 独立的题号网格 */
+.nav-section { grid-column: 1 / -1; display: grid; gap: 6px; }
+.nav-section + .nav-section { margin-top: 10px; padding-top: 9px; border-top: 1px dashed #e8eded; }
+.nav-section-title { display: flex; align-items: center; justify-content: space-between; gap: 6px; color: #6e8179; font-size: 11px; font-weight: 700; }
+.nav-section-title em { color: #9aa8a4; font-size: 10px; font-style: normal; font-weight: 400; }
+.nav-subgrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; }
 
 .question-card { padding: clamp(18px, 3vw, 30px); border: 1px solid #e7ecea; border-radius: 12px; background: #fff; box-shadow: 0 8px 25px #253a3507; }
 .question-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; }
@@ -226,12 +232,18 @@ button { color: inherit; }
 
 /* 图片放大查看 */
 .lightbox { position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; background: #0e1714f2; }
-.lightbox-stage { flex: 1; min-height: 0; display: grid; overflow: hidden; padding: 18px; }
-.lightbox-stage.scrolled { display: block; overflow: auto; }
-.lightbox-image { width: 100%; height: 100%; object-fit: contain; cursor: zoom-in; }
-.lightbox-stage.scrolled .lightbox-image { display: block; width: auto; height: auto; max-width: none; max-height: none; object-fit: none; margin: 0 auto; cursor: zoom-out; }
-.lightbox-bar { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 4vw; background: #ffffff14; }
+/* margin:auto 而不是 align-items:center —— 图片超出窗口时不会把上半部分顶到滚动区外面 */
+.lightbox-stage { flex: 1; min-height: 0; display: flex; overflow: auto; overscroll-behavior: contain; padding: 18px; }
+.lightbox-image { margin: auto; max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; cursor: zoom-in; user-select: none; -webkit-user-drag: none; }
+.lightbox-image.zoomed { max-width: none; max-height: none; cursor: grab; }
+.lightbox-image.dragging { cursor: grabbing; }
+.lightbox-bar { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px 12px; padding: 12px 4vw; background: #ffffff14; }
 .lightbox-caption { color: #d7e4de; font-size: 11px; }
+.lightbox-tools { display: flex; align-items: center; gap: 8px; }
+.lightbox-tool { min-width: 30px; height: 30px; padding: 0 9px; border: 1px solid #ffffff45; border-radius: 999px; color: #eaf5f0; background: transparent; font-size: 13px; line-height: 1; cursor: pointer; }
+.lightbox-tool:hover:not(:disabled) { border-color: #ffffff8c; background: #ffffff1f; }
+.lightbox-tool:disabled { opacity: .45; cursor: default; }
+.lightbox-zoom { min-width: 62px; color: #d7e4de; font-size: 11px; text-align: center; }
 .lightbox-close { padding: 6px 14px; border: 1px solid #ffffff45; border-radius: 999px; color: #eaf5f0; background: transparent; font-size: 11px; cursor: pointer; }
 .lightbox-close:hover { border-color: #ffffff8c; background: #ffffff1f; }
 
@@ -301,6 +313,7 @@ html.embedded .practice-view, html.embedded .setup-view { padding-top: 20px; }
   .option-panel { position: static; }
   .practice-layout { grid-template-columns: minmax(0, 1fr); }
   .nav-grid { position: static; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); max-height: 190px; }
+  .nav-subgrid { grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); }
   .correct-layout { grid-template-columns: minmax(0, 1fr); overflow-y: auto; }
   .correct-pdf-sources { min-height: 48vh; }
   .correct-pdf-card iframe { min-height: 42vh; }

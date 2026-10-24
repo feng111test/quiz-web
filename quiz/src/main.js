@@ -600,7 +600,7 @@ function renderPractice() {
   ui.qImages.innerHTML = question.images
     .map(
       (image, index) =>
-        `<figure class="q-image"><img src="${escapeHtml(image.src)}" alt="题目图片 ${index + 1}"></figure>`,
+        `<figure class="q-image"><img src="${escapeHtml(image.src)}" alt="题目图片 ${index + 1}" draggable="false"></figure>`,
     )
     .join("");
 
@@ -715,7 +715,7 @@ function feedbackGallery(question) {
   return question.explanationImages
     .map(
       (image, index) =>
-        `<img class="formula-image" src="${escapeHtml(image.src)}" alt="解析图片 ${index + 1}">`,
+        `<img class="formula-image" src="${escapeHtml(image.src)}" alt="解析图片 ${index + 1}" draggable="false">`,
     )
     .join("");
 }
@@ -825,15 +825,39 @@ function renderFeedback(question, response) {
     ${feedbackExplanation(question)}`;
 }
 
+/** 把题池按题型切成连续的分组，左侧答题卡就能按“单选题/主观题”分块显示 */
+function navSections() {
+  const sections = [];
+  state.pool.forEach((question, index) => {
+    const type = question?.type || "single";
+    const last = sections[sections.length - 1];
+    if (!last || last.type !== type) sections.push({ type, items: [{ question, index }] });
+    else last.items.push({ question, index });
+  });
+  return sections;
+}
+
 function renderNav() {
-  ui.navList.innerHTML = state.pool
-    .map((question, index) => {
-      const response = responseFor(question);
-      const status = response.submitted ? (response.correct ? "correct" : "wrong") : "";
-      return `<button class="nav-item ${index === state.index ? "active" : ""} ${status}" data-index="${index}" type="button">
+  const sections = navSections();
+  const showTitle = sections.length > 1;
+
+  ui.navList.innerHTML = sections
+    .map((section) => {
+      const items = section.items
+        .map(({ question, index }) => {
+          const response = responseFor(question);
+          const status = response.submitted ? (response.correct ? "correct" : "wrong") : "";
+          return `<button class="nav-item ${index === state.index ? "active" : ""} ${status}" data-index="${index}" type="button" title="第 ${index + 1} 题">
         <span>${index + 1}</span>
         ${response.flagged ? '<i class="nav-flag">★</i>' : ""}
       </button>`;
+        })
+        .join("");
+      if (!showTitle) return `<div class="nav-subgrid">${items}</div>`;
+      return `<section class="nav-section">
+        <div class="nav-section-title"><span>${TYPE_LABELS[section.type] || "其他题"}</span><em>${section.items.length} 题</em></div>
+        <div class="nav-subgrid">${items}</div>
+      </section>`;
     })
     .join("");
 
@@ -1530,7 +1554,7 @@ function resetToGate() {
   ui.correctView.hidden = true;
   ui.feedbackModal.hidden = true;
   ui.inboxModal.hidden = true;
-  ui.lightbox.hidden = true;
+  lightbox?.close(); // 走 close() 才能恢复页面滚动，不能只把放大层隐藏
 }
 
 async function syncAuthState(session) {
@@ -1558,7 +1582,7 @@ async function syncAuthState(session) {
 }
 
 account = initAccountUI({ showToast, onSessionChange: syncAuthState });
-initImageLightbox();
+const lightbox = initImageLightbox();
 feedbackUI = initFeedbackUI({
   showToast,
   getCurrentQuestion: () => state.pool[state.index],

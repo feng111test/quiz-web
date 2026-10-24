@@ -129,6 +129,56 @@ button { color: inherit; }
 .question-actions .button { min-height: 35px; }
 .action-right { display: flex; gap: 8px; }
 .keyboard-hint { margin: 13px 0 0; color: #95a1a2; font-size: 10px; text-align: center; }
+.practice-actions { display: flex; gap: 8px; }
+.list-item.reviewed .list-index { color: var(--accent); }
+
+/* 校对：左侧原文 Word，右侧解析结果 */
+.proofread { width: min(1440px, 100%); min-height: calc(100vh - 72px); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); margin: 0 auto; border-inline: 1px solid var(--line); background: #f7f9f9; }
+.proof-doc { min-width: 0; display: flex; flex-direction: column; border-right: 1px solid var(--line); background: #fff; }
+.proof-doc-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 20px 22px 14px; border-bottom: 1px solid var(--line); }
+.proof-doc-head h2 { margin: 0; font-size: 16px; }
+.proof-doc-head .eyebrow { margin-bottom: 5px; }
+.proof-doc-tools { display: flex; align-items: center; gap: 10px; }
+.proof-doc-tools .button { min-height: 30px; padding: 0 12px; font-size: 10px; }
+.doc-hint { max-width: 220px; overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.doc-body { position: relative; flex: 1; overflow: auto; padding: 18px 22px 40px; font-size: 13px; line-height: 1.95; }
+.doc-body p { margin: 0 0 6px; white-space: pre-wrap; }
+.doc-block { padding: 2px 6px; border-radius: 6px; }
+.doc-block.active { background: #fdf6de; box-shadow: inset 3px 0 0 #e0b657; }
+.doc-image { display: block; max-width: 100%; height: auto; margin: 3px 0; }
+.doc-table { width: 100%; margin: 6px 0 10px; border-collapse: collapse; font-size: 12px; }
+.doc-table td { padding: 5px 8px; border: 1px solid #dfe6e3; vertical-align: top; }
+.doc-missing { display: grid; gap: 12px; justify-items: start; margin: 22px; padding: 18px; border: 1px solid #eee; border-radius: 10px; background: #fbfcfc; }
+.doc-missing p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.8; }
+
+.proof-form { min-width: 0; display: flex; flex-direction: column; }
+.proof-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 20px 22px 14px; border-bottom: 1px solid var(--line); }
+.proof-head h2 { margin: 0; font-size: 16px; }
+.proof-head .eyebrow { margin-bottom: 5px; }
+.proof-nav { display: flex; align-items: center; gap: 8px; }
+.proof-nav .button { min-height: 30px; padding: 0 12px; font-size: 10px; }
+.proof-index { min-width: 52px; color: var(--muted); font-size: 11px; text-align: center; }
+.proof-body { flex: 1; overflow: auto; display: grid; gap: 14px; padding: 18px 22px 24px; }
+.proof-field { display: grid; gap: 6px; }
+.proof-field > span { color: #53635f; font-size: 11px; font-weight: 600; }
+.proof-field textarea, .proof-field select, .proof-option-key, .proof-option-content { width: 100%; padding: 9px 11px; border: 1px solid #dfe7e4; border-radius: 8px; color: #3f4d48; background: #fff; font-family: inherit; font-size: 12px; line-height: 1.75; resize: vertical; }
+.proof-field select { width: auto; min-width: 120px; }
+.proof-field textarea:focus, .proof-field select:focus, .proof-option-key:focus, .proof-option-content:focus { outline: none; border-color: #86b99b; box-shadow: 0 0 0 3px #e4f1ea; }
+.proof-options { display: grid; gap: 8px; }
+.proof-option { display: grid; grid-template-columns: 58px minmax(0, 1fr) auto auto; align-items: start; gap: 8px; }
+.proof-option-right { display: flex; align-items: center; gap: 5px; padding-top: 11px; color: #5c8070; font-size: 11px; white-space: nowrap; }
+.proof-option-right input { accent-color: var(--accent); }
+.proof-option-remove { align-self: center; padding: 0; border: 0; color: #b4624a; background: transparent; font-size: 10px; cursor: pointer; }
+.proof-option-remove:hover { text-decoration: underline; }
+.proof-add { justify-self: start; min-height: 30px; font-size: 10px; }
+.proof-images { display: flex; flex-wrap: wrap; gap: 10px; }
+.proof-image { margin: 0; }
+.proof-image img { display: block; max-width: 160px; max-height: 90px; border: 1px solid var(--line); border-radius: 6px; object-fit: contain; background: #fff; }
+.proof-image figcaption { margin-top: 4px; color: var(--muted); font-size: 9px; }
+.proof-images-empty { color: #9aa6a6; font-size: 10px; }
+.proof-actions { display: flex; align-items: center; gap: 10px; padding: 14px 22px; border-top: 1px solid var(--line); background: #fff; }
+.proof-status { color: var(--muted); font-size: 10px; }
+.proof-status.done { color: var(--accent); font-weight: 700; }
 .toast { position: fixed; z-index: 10; left: 50%; bottom: 27px; padding: 11px 17px; border-radius: 8px; color: #fff; background: #263633eF; box-shadow: 0 8px 30px #0002; font-size: 11px; opacity: 0; pointer-events: none; transform: translate(-50%, 8px); transition: .2s ease; }
 .toast.visible { opacity: 1; transform: translate(-50%, 0); }
 .is-loading::after { position: fixed; z-index: 9; inset: 0; display: grid; place-items: center; color: #fff; background: #1a2c2bcc; content: "正在本机读取并解析 Word…"; font-size: 15px; font-weight: 600; }
@@ -157,6 +207,16 @@ button { color: inherit; }
 html.embedded body { min-height: 100%; }
 html.embedded .topbar { display: none; }
 html.embedded .workspace { min-height: 100vh; }
+html.embedded .proofread { min-height: 100vh; }
+
+@media (max-width: 1000px) {
+  .proofread { grid-template-columns: minmax(0, 1fr); border-inline: 0; }
+  .proof-doc { max-height: 45vh; border-right: 0; border-bottom: 1px solid var(--line); }
+  .proof-head { flex-wrap: wrap; }
+  .doc-hint { max-width: 140px; }
+  .proof-option { grid-template-columns: 48px minmax(0, 1fr) auto; }
+  .proof-option-remove { grid-column: 3; }
+}
 
 @media (max-width: 800px) {
   .workspace { grid-template-columns: 205px minmax(0, 1fr); }

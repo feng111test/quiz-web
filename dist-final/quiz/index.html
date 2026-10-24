@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="内置 2026 年高考化学真题，打开即刷，支持题目校对与反馈。"
+    />
+    <title>题库刷题 · 高考化学真题</title>
+    <script type="module" crossorigin src="/assets/quiz-B2jIygfT.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/modulepreload-polyfill-B5Qt9EMX.js">
+    <link rel="modulepreload" crossorigin href="/assets/question-text-BbYjcTwS.js">
+    <link rel="stylesheet" crossorigin href="/assets/quiz-BjnN6-FJ.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="./index.html" aria-label="题库刷题">
+        <span class="brand-mark">刷</span>
+        <span>
+          <strong>题库刷题</strong>
+          <small>内置真题 · 打开即练</small>
+        </span>
+      </a>
+
+      <div class="header-note"><span class="live-dot"></span>题库本机保存 · 打开即练</div>
+
+      <div class="auth-area">
+        <button id="feedbackInboxButton" class="auth-button teacher-only" type="button" hidden>
+          反馈处理<span id="feedbackBadge" class="auth-badge" hidden>0</span>
+        </button>
+        <span id="authUser" class="auth-user"></span>
+        <button id="authButton" class="auth-button" type="button">登录</button>
+        <button id="authLogout" class="auth-button quiet" type="button" hidden>退出</button>
+      </div>
+    </header>
+
+    <main>
+      <section id="setupView" class="setup-view">
+        <div class="setup-head">
+          <p class="section-eyebrow">UNIFIED PRACTICE</p>
+          <h1>高考化学真题，打开即刷</h1>
+          <p class="setup-copy">
+            2026 年高考化学各地真题已作为默认题库内置，勾选任意题库即可组合成一套练习，
+            支持随机抽题、只刷错题和本题标记。
+          </p>
+        </div>
+
+        <div class="summary">
+          <div><small>内置题库</small><strong id="statBanks">0</strong></div>
+          <div><small>可练习题</small><strong id="statQuestions">0</strong></div>
+          <div><small>本次选中</small><strong id="statSelected">0</strong></div>
+        </div>
+
+        <div class="setup-body">
+          <section class="bank-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="section-eyebrow">MY QUESTION BANKS</p>
+                <h2>选择题库</h2>
+              </div>
+              <div class="panel-actions">
+                <button id="selectAll" class="text-button" type="button">全选</button>
+                <button id="selectNone" class="text-button" type="button">清空</button>
+              </div>
+            </div>
+
+            <div id="bankList" class="bank-list"></div>
+
+            <div id="bankEmpty" class="bank-empty" hidden>
+              <strong>还没有可用的题库</strong>
+              <p>
+                页面默认加载 2026 年高考化学各地真题（16 份试卷）。这里为空说明内置真题没有加载成功，
+                请确认是用 <code>npm run dev</code> 启动的本地页面，或重新执行 <code>npm run build:quiz</code> 后再打开。
+              </p>
+            </div>
+          </section>
+
+          <aside class="option-panel">
+            <div class="option-heading">
+              <p class="section-eyebrow">PRACTICE OPTIONS</p>
+              <h2>练习设置</h2>
+            </div>
+
+            <div class="option-group">
+              <span class="option-label">题目顺序</span>
+              <div id="orderModes" class="segmented">
+                <button class="segment active" type="button" data-order="sequence">顺序练习</button>
+                <button class="segment" type="button" data-order="random">随机抽题</button>
+              </div>
+            </div>
+
+            <div class="option-group">
+              <span class="option-label">练习范围</span>
+              <div id="scopeModes" class="segmented vertical">
+                <button class="segment active" type="button" data-scope="all">全部题目</button>
+                <button class="segment" type="button" data-scope="unanswered">没做过的</button>
+                <button class="segment" type="button" data-scope="wrong">做错的题</button>
+                <button class="segment" type="button" data-scope="flagged">标记过的</button>
+              </div>
+            </div>
+
+            <div class="option-group">
+              <span class="option-label">题型范围</span>
+              <div id="typeModes" class="segmented vertical">
+                <button class="segment active" type="button" data-qtype="all">全部题型</button>
+                <button class="segment" type="button" data-qtype="objective">只看选择题</button>
+                <button class="segment" type="button" data-qtype="subjective">只看主观题</button>
+              </div>
+            </div>
+
+            <label class="switch">
+              <input id="autoNext" type="checkbox" />
+              <span>提交后自动进入下一题</span>
+            </label>
+
+            <p id="pickSummary" class="pick-summary">还没有选择题库</p>
+            <p class="option-hint">
+              答题记录保存在本机浏览器，随时可以关掉页面，下次打开自动回到上次那一题。
+            </p>
+
+            <button id="startPractice" class="button button-primary start-button" type="button" disabled>
+              开始刷题（0）
+            </button>
+          </aside>
+        </div>
+      </section>
+
+      <section id="practiceView" class="practice-view" hidden>
+        <header class="practice-header">
+          <div>
+            <p class="section-eyebrow">MIXED PRACTICE</p>
+            <h1 id="practiceTitle">混合练习</h1>
+            <p id="practiceProgress" class="practice-progress"></p>
+          </div>
+          <div class="practice-header-actions">
+            <button id="endPractice" class="button button-quiet" type="button">结束作答</button>
+            <button id="practiceRestart" class="button button-quiet" type="button">重新练习</button>
+            <button id="practiceExit" class="button button-quiet" type="button">返回选题</button>
+          </div>
+        </header>
+
+        <div id="progressTrack" class="progress-track"><span id="progressBar"></span></div>
+
+        <section id="finishCard" class="finish-card" hidden>
+          <div class="finish-copy">
+            <strong id="finishTitle">本轮练习已完成</strong>
+            <small id="finishSummary"></small>
+          </div>
+          <div class="finish-actions">
+            <button id="practiceWrongOnly" class="button button-quiet" type="button">只练错题</button>
+            <button id="practiceAgain" class="button button-primary" type="button">再来一次</button>
+          </div>
+        </section>
+
+        <div id="practiceLayout" class="practice-layout">
+          <nav id="navList" class="nav-grid" aria-label="题目导航"></nav>
+
+          <article class="question-card">
+            <div class="question-meta">
+              <span id="qNumber" class="q-number"></span>
+              <span id="qBank" class="q-bank"></span>
+              <span id="qType" class="q-type"></span>
+              <span id="qCorrected" class="q-corrected" hidden>已校正</span>
+              <div class="meta-actions">
+                <button id="correctButton" class="flag-button correct-button" type="button" hidden>校对本题</button>
+                <button id="feedbackButton" class="flag-button" type="button">反馈本题</button>
+                <button id="flagButton" class="flag-button" type="button">标记本题</button>
+              </div>
+            </div>
+            <h2 id="qTitle" class="q-title"></h2>
+            <div id="qImages" class="q-images"></div>
+            <div id="qOptions" class="q-options"></div>
+            <div id="qFeedback" class="q-feedback" aria-live="polite" hidden></div>
+            <div class="question-actions">
+              <button id="prevButton" class="button button-quiet" type="button">上一题</button>
+              <div class="action-right">
+                <button id="submitButton" class="button button-primary" type="button">提交答案</button>
+                <button id="nextButton" class="button button-quiet" type="button">下一题</button>
+              </div>
+            </div>
+          </article>
+        </div>
+
+        <p class="keyboard-hint">
+          快捷键：← → 切换题目 · 1~6 选择选项 · Enter 提交并进入下一题 · F 标记本题 · C 校对本题。主观题在文本框里作答，提交后对照参考答案自评。
+        </p>
+      </section>
+
+      <section id="correctView" class="correct-view" hidden>
+        <div class="correct-layout">
+          <aside id="correctPdfSources" class="correct-pdf-sources" aria-label="原卷 PDF">
+            <div class="correct-pdf-empty">正在查找对应原卷…</div>
+          </aside>
+          <div class="correct-panel">
+            <header class="correct-head">
+              <div>
+                <p class="section-eyebrow">REVIEW QUESTION</p>
+                <h2 id="correctHeading">校正本题</h2>
+              </div>
+              <button id="correctClose" class="text-button" type="button">关闭</button>
+            </header>
+
+            <div class="correct-field">
+              <span class="option-label">题型</span>
+              <select id="correctType" class="correct-select">
+                <option value="single">单选题</option>
+                <option value="multiple">多选题</option>
+                <option value="judge">判断题</option>
+                <option value="subjective">主观题</option>
+              </select>
+            </div>
+
+            <div class="correct-field">
+              <span class="option-label">题干</span>
+              <textarea id="correctTitle" class="correct-textarea" rows="4"></textarea>
+            </div>
+
+            <div class="correct-field">
+              <span class="option-label">题干图片</span>
+              <div id="correctImages" class="correct-images"></div>
+            </div>
+
+            <div id="correctAnswerField" class="correct-field" hidden>
+              <span class="option-label">参考答案（主观题）</span>
+              <textarea id="correctAnswerText" class="correct-textarea" rows="6"></textarea>
+            </div>
+
+            <div id="correctOptionsField" class="correct-field">
+              <span class="option-label">选项（勾选“正确”即为答案）</span>
+              <div id="correctOptions" class="correct-options"></div>
+              <button id="correctAddOption" class="text-button" type="button">＋ 增加选项</button>
+            </div>
+
+            <div class="correct-field">
+              <span class="option-label">解析</span>
+              <textarea id="correctExplanation" class="correct-textarea" rows="4"></textarea>
+            </div>
+
+            <footer class="correct-actions">
+              <button id="correctReset" class="button button-quiet" type="button">恢复原题</button>
+              <div class="correct-actions-right">
+                <button id="correctCancel" class="button button-quiet" type="button">取消</button>
+                <button id="correctSave" class="button button-primary" type="button">保存校正</button>
+              </div>
+            </footer>
+          </div>
+        </div>
+      </section>
+
+      <section id="authView" class="modal-view" hidden>
+        <div class="modal-card narrow">
+          <header class="modal-head">
+            <div>
+              <p class="section-eyebrow">ACCOUNT</p>
+              <h2 id="authTitle">登录</h2>
+            </div>
+            <button id="authClose" class="text-button" type="button">关闭</button>
+          </header>
+
+          <p id="authGateHint" class="modal-hint" hidden>
+            请先登录再使用题库。教师登录后可校对题目（校对结果写入后端题库并对所有人生效），学生可提交反馈由教师处理。
+          </p>
+          <p id="authHint" class="modal-hint">
+            教师登录后可校对题目，校对结果会写入后端题库并对所有人生效；学生只能提交反馈，由教师处理。
+          </p>
+
+          <label class="auth-field">
+            <span>用户名</span>
+            <input id="authUsername" type="text" autocomplete="username" placeholder="3~32 位" />
+          </label>
+          <label class="auth-field" id="authDisplayNameField" hidden>
+            <span>昵称</span>
+            <input id="authDisplayName" type="text" autocomplete="nickname" placeholder="可留空，默认同用户名" />
+          </label>
+          <label class="auth-field">
+            <span>密码</span>
+            <input id="authPassword" type="password" autocomplete="current-password" placeholder="至少 6 位" />
+          </label>
+
+          <p id="authError" class="auth-error" hidden></p>
+
+          <footer class="modal-actions">
+            <button id="authSwitch" class="text-button" type="button">没有账号？注册学生账号</button>
+            <div class="modal-actions-right">
+              <button id="authCancel" class="button button-quiet" type="button">取消</button>
+              <button id="authSubmit" class="button button-primary" type="button">登录</button>
+            </div>
+          </footer>
+        </div>
+      </section>
+
+      <section id="feedbackView" class="modal-view" hidden>
+        <div class="modal-card">
+          <header class="modal-head">
+            <div>
+              <p class="section-eyebrow">QUESTION FEEDBACK</p>
+              <h2>反馈本题</h2>
+            </div>
+            <button id="feedbackClose" class="text-button" type="button">关闭</button>
+          </header>
+
+          <p id="feedbackTarget" class="modal-hint"></p>
+
+          <label class="auth-field">
+            <span>问题类型</span>
+            <select id="feedbackReason" class="correct-select">
+              <option value="题干有误">题干有误</option>
+              <option value="答案有误">答案有误</option>
+              <option value="解析有误">解析有误</option>
+              <option value="选项有误">选项有误</option>
+              <option value="题目残缺或乱码">题目残缺或乱码</option>
+              <option value="其他">其他</option>
+            </select>
+          </label>
+          <label class="auth-field">
+            <span>具体说明（可写你认为正确的内容）</span>
+            <textarea id="feedbackSuggestion" class="correct-textarea" rows="5" placeholder="例如：参考答案应为 B，选项 C 的化学式写错了。"></textarea>
+          </label>
+
+          <p id="feedbackError" class="auth-error" hidden></p>
+
+          <footer class="modal-actions">
+            <span class="modal-note">学生不能直接改题，反馈会进入教师处理列表。</span>
+            <div class="modal-actions-right">
+              <button id="feedbackCancel" class="button button-quiet" type="button">取消</button>
+              <button id="feedbackSubmit" class="button button-primary" type="button">提交反馈</button>
+            </div>
+          </footer>
+        </div>
+      </section>
+
+      <section id="inboxView" class="modal-view" hidden>
+        <div class="modal-card wide">
+          <header class="modal-head">
+            <div>
+              <p class="section-eyebrow">FEEDBACK INBOX</p>
+              <h2>学生反馈处理</h2>
+            </div>
+            <button id="inboxClose" class="text-button" type="button">关闭</button>
+          </header>
+
+          <div class="inbox-tabs">
+            <button class="segment active" type="button" data-status="open">待处理</button>
+            <button class="segment" type="button" data-status="accepted">已采纳</button>
+            <button class="segment" type="button" data-status="rejected">已驳回</button>
+          </div>
+
+          <div id="inboxList" class="inbox-list"></div>
+          <p id="inboxEmpty" class="modal-hint" hidden>这个分类下暂时没有反馈。</p>
+        </div>
+      </section>
+    </main>
+
+    <div id="imageLightbox" class="lightbox" hidden>
+      <div id="lightboxStage" class="lightbox-stage">
+        <img id="lightboxImage" class="lightbox-image" alt="" draggable="false" />
+      </div>
+      <div class="lightbox-bar">
+        <span id="lightboxCaption" class="lightbox-caption"></span>
+        <div class="lightbox-tools">
+          <button id="lightboxZoomOut" class="lightbox-tool" type="button" aria-label="缩小">－</button>
+          <span id="lightboxZoom" class="lightbox-zoom">适应窗口</span>
+          <button id="lightboxZoomIn" class="lightbox-tool" type="button" aria-label="放大">＋</button>
+          <button id="lightboxFit" class="lightbox-tool wide" type="button">适应窗口</button>
+          <button id="lightboxClose" class="lightbox-close" type="button">关闭 ✕</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  </body>
+</html>

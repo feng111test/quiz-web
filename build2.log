@@ -1,0 +1,16 @@
+[36mvite v7.2.2 [32mbuilding client environment for production...[36m[39m
+transforming...
+[32m✓[39m 15 modules transformed.
+✗ Build failed in 3.70s
+error during build:
+Error: [safe-delete][SAFE_DELETE_BULK_CONFIRM_REQUIRED] {"count":500,"threshold":500,"scope":"turn","targets":["D:\\Users\\fql\\WeChatProjects\\quiz-web\\dist-quiz\\builtin-data\\images\\bank-6\\q003-optD-formulaImages-0.png"],"targetCount":1}
+    at checkBulkDeleteGuard (c:\Users\fql\.vscode\extensions\tencent-cloud.coding-copilot-4.12.39997873\out\vendor\shim\node-safe-delete-shim.cjs:404:19)
+    at tryTrash (c:\Users\fql\.vscode\extensions\tencent-cloud.coding-copilot-4.12.39997873\out\vendor\shim\node-safe-delete-shim.cjs:733:5)
+    at c:\Users\fql\.vscode\extensions\tencent-cloud.coding-copilot-4.12.39997873\out\vendor\shim\node-safe-delete-shim.cjs:866:9
+    at mayCopyFile (node:internal/fs/cp/cp:247:11)
+    at onFile (node:internal/fs/cp/cp:242:10)
+    at getStatsForCopy (node:internal/fs/cp/cp:211:12)
+    at async copyDir (node:internal/fs/cp/cp:336:19)
+    at async onDir (node:internal/fs/cp/cp:314:3)
+    at async copyDir (node:internal/fs/cp/cp:336:19)
+    at async onDir (node:internal/fs/cp/cp:314:3)

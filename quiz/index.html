@@ -350,11 +350,17 @@
 
     <div id="imageLightbox" class="lightbox" hidden>
       <div id="lightboxStage" class="lightbox-stage">
-        <img id="lightboxImage" class="lightbox-image" src="" alt="" />
+        <img id="lightboxImage" class="lightbox-image" alt="" draggable="false" />
       </div>
       <div class="lightbox-bar">
         <span id="lightboxCaption" class="lightbox-caption"></span>
-        <button id="lightboxClose" class="lightbox-close" type="button">关闭 ✕</button>
+        <div class="lightbox-tools">
+          <button id="lightboxZoomOut" class="lightbox-tool" type="button" aria-label="缩小">－</button>
+          <span id="lightboxZoom" class="lightbox-zoom">适应窗口</span>
+          <button id="lightboxZoomIn" class="lightbox-tool" type="button" aria-label="放大">＋</button>
+          <button id="lightboxFit" class="lightbox-tool wide" type="button">适应窗口</button>
+          <button id="lightboxClose" class="lightbox-close" type="button">关闭 ✕</button>
+        </div>
       </div>
     </div>
 

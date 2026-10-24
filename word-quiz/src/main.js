@@ -14,6 +14,15 @@ import {
   renderFormulaContent,
 } from "../../src/question-text.js";
 import { parseQuestionBank } from "./word-parser.js";
+import { buildWordPreview } from "./word-preview.js";
+import {
+  REL_NS,
+  VML_NS,
+  WORD_MAIN_NS,
+  createImageLoader,
+  localName,
+  readRelationships,
+} from "./word-docx.js";
 import {
   collectExplanationImages,
   matchQuestionImages,
@@ -48,6 +57,29 @@ const ui = {
   next: byId("next-button"),
   submit: byId("submit-button"),
   restart: byId("restart-button"),
+  proofreadButton: byId("proofread-button"),
+  proofread: byId("proofread"),
+  proofHeading: byId("proof-heading"),
+  proofIndex: byId("proof-index"),
+  proofPrev: byId("proof-prev"),
+  proofNext: byId("proof-next"),
+  proofExit: byId("proof-exit"),
+  proofType: byId("proof-type"),
+  proofStem: byId("proof-stem"),
+  proofOptionsField: byId("proof-options-field"),
+  proofOptions: byId("proof-options"),
+  proofAddOption: byId("proof-add-option"),
+  proofAnswerField: byId("proof-answer-field"),
+  proofAnswerText: byId("proof-answer-text"),
+  proofExplanation: byId("proof-explanation"),
+  proofImages: byId("proof-images"),
+  proofSave: byId("proof-save"),
+  proofRevert: byId("proof-revert"),
+  proofStatus: byId("proof-status"),
+  docBody: byId("doc-body"),
+  docMissing: byId("doc-missing"),
+  docHint: byId("doc-hint"),
+  docLocate: byId("doc-locate"),
   deleteBank: byId("delete-bank"),
   bankLibrary: byId("bankLibrary"),
   bankCount: byId("bankCount"),
@@ -67,6 +99,11 @@ const state = {
   bankId: null,
   bankName: "",
   saveTimer: null,
+  proofreading: false,
+  documentHtml: "",
+  documentName: "",
+  // 校对前的解析结果快照，用于「恢复解析结果」
+  originals: new Map(),
 };
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
@@ -75,9 +112,8 @@ const FORMULA_SPACING_MIN = 150;
 const FORMULA_SPACING_MAX = 1100;
 const FORMULA_IMAGE_ROW_TOLERANCE = 3;
 const TYPE_LABELS = { single: "单选题", multiple: "多选题", subjective: "主观题" };
+const OPTION_KEYS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const FORMULA_PLACEHOLDER = "〔公式〕";
-const VML_NS = "urn:schemas-microsoft-com:vml";
-const REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 const EMU_PER_POINT = 12700;
 
 function showToast(message) {
@@ -87,18 +123,12 @@ function showToast(message) {
   state.toastTimer = setTimeout(() => ui.toast.classList.remove("visible"), 3200);
 }
 
-function localName(node) {
-  return node.localName || node.nodeName.split(":").pop();
-}
-
 function formulaPlaceholder(run) {
   const properties = Array.from(run.children).find((child) => localName(child) === "rPr");
   const spacing = Array.from(properties?.children || []).find((child) => localName(child) === "spacing");
   if (!spacing) return false;
 
-  const value = Number(
-    spacing.getAttributeNS("http://schemas.openxmlformats.org/wordprocessingml/2006/main", "val"),
-  );
+  const value = Number(spacing.getAttributeNS(WORD_MAIN_NS, "val"));
   const isFormulaSpacing =
     (value >= FORMULA_SPACING_MIN && value <= FORMULA_SPACING_MAX) || value >= 4000;
   if (!isFormulaSpacing) return false;
@@ -179,33 +209,6 @@ function questionParagraphIndexes(xml) {
   return indexes;
 }
 
-function zipPathForWordTarget(target) {
-  const parts = (target.startsWith("/") ? target.slice(1) : `word/${target}`)
-    .replaceAll("\\", "/")
-    .split("/");
-  const resolved = [];
-  for (const part of parts) {
-    if (!part || part === ".") continue;
-    if (part === "..") resolved.pop();
-    else resolved.push(part);
-  }
-  return resolved.join("/");
-}
-
-function mimeTypeForImage(path) {
-  const extension = path.split(".").pop()?.toLowerCase();
-  return (
-    {
-      gif: "image/gif",
-      jpeg: "image/jpeg",
-      jpg: "image/jpeg",
-      png: "image/png",
-      svg: "image/svg+xml",
-      webp: "image/webp",
-    }[extension] || "application/octet-stream"
-  );
-}
-
 function styleLength(style, property) {
   const value = style.match(new RegExp(`${property}:([0-9.]+)pt`))?.[1];
   return value ? Number(value) : 0;
@@ -222,47 +225,14 @@ async function extractFormulaImagePages(zip, documentXmlText) {
   const hasDrawing = document.getElementsByTagNameNS("*", "drawing").length > 0;
   if (!hasVml && !hasDrawing) return { pages: [], unresolvedImages: 0 };
 
-  const relationshipsFile = zip.file("word/_rels/document.xml.rels");
-  if (!relationshipsFile) throw new Error("Word 中包含公式图片，但找不到图片关系文件");
-  const relationshipsXml = await relationshipsFile.async("string");
-  const relationshipsDocument = new DOMParser().parseFromString(relationshipsXml, "application/xml");
-  if (relationshipsDocument.querySelector("parsererror")) {
-    throw new Error("Word 图片关系 XML 无法解析");
-  }
+  const relationships = await readRelationships(zip);
+  if (!relationships) throw new Error("Word 中包含公式图片，但找不到图片关系文件");
 
-  const relationships = new Map(
-    Array.from(relationshipsDocument.getElementsByTagNameNS("*", "Relationship"), (relationship) => [
-      relationship.getAttribute("Id"),
-      {
-        target: relationship.getAttribute("Target"),
-        external: relationship.getAttribute("TargetMode") === "External",
-      },
-    ]),
-  );
   const body = document.getElementsByTagNameNS("*", "body")[0];
   if (!body) return { pages: [], unresolvedImages: 0 };
   const pages = [];
-  const imageCache = new Map();
+  const { read: readImage } = createImageLoader(zip, relationships);
   let unresolvedImages = 0;
-
-  const readImage = async (relationshipId) => {
-    if (!relationshipId) return null;
-    if (imageCache.has(relationshipId)) return imageCache.get(relationshipId);
-    const relationship = relationships.get(relationshipId);
-    if (!relationship || relationship.external) {
-      imageCache.set(relationshipId, null);
-      return null;
-    }
-    const path = zipPathForWordTarget(relationship.target);
-    const file = zip.file(path);
-    if (!file) {
-      imageCache.set(relationshipId, null);
-      return null;
-    }
-    const src = `data:${mimeTypeForImage(path)};base64,${await file.async("base64")}`;
-    imageCache.set(relationshipId, src);
-    return src;
-  };
 
   for (const [paragraphIndex, paragraph] of Array.from(body.children).entries()) {
     if (localName(paragraph) !== "p") continue;
@@ -396,7 +366,17 @@ async function loadWord(file) {
     };
     cursor = collectExplanationImages(question, pages, cursor, nextQuestionImage);
   }
-  return { ...result, unresolvedImages };
+
+  // 原文预览：校对时左侧展示整份 Word 内容，按题号可定位
+  let documentHtml = "";
+  try {
+    const preview = await buildWordPreview(zip, xml);
+    documentHtml = preview.html;
+  } catch (error) {
+    console.warn("[Word 原文预览] 生成失败", error);
+  }
+
+  return { ...result, unresolvedImages, documentHtml, documentName: file.name };
 }
 
 function currentQuestion() {
@@ -438,7 +418,7 @@ function renderList() {
       const response = responseFor(question);
       const status = responseState(response);
       const mark = !response.submitted ? "" : response.correct === true ? "✓" : response.correct === false ? "✗" : "?";
-      return `<button class="list-item ${index === state.current ? "active" : ""} ${status}" data-index="${index}" type="button">
+      return `<button class="list-item ${index === state.current ? "active" : ""} ${status} ${question.reviewed ? "reviewed" : ""}" data-index="${index}" type="button" title="${question.reviewed ? "已校对" : ""}">
         <span class="list-index">${String(index + 1).padStart(2, "0")}</span>
         <span class="list-title">${renderFormulaContent(question.title, question.titleImages, FORMULA_PLACEHOLDER)}</span>
         <span class="list-mark">${mark}</span>
@@ -604,6 +584,282 @@ function render() {
   renderList();
 }
 
+/* ---------------- 校对：左侧原文 Word，右侧解析结果 ---------------- */
+
+function setProofreading(on) {
+  const active = Boolean(on) && state.questions.length > 0;
+  if (!active) {
+    state.proofreading = false;
+    ui.proofread.hidden = true;
+    ui.workspace.hidden = false;
+    return;
+  }
+  state.proofreading = true;
+  ui.proofread.hidden = false;
+  ui.workspace.hidden = true;
+  if (!state.documentHtml) {
+    showToast("本机题库不含原始 Word 文件，可重新导入同一份文档查看原文");
+  }
+  renderDocPreview();
+  renderProofread();
+}
+
+function renderDocPreview() {
+  ui.docBody.innerHTML = state.documentHtml;
+  ui.docBody.hidden = !state.documentHtml;
+  ui.docMissing.hidden = Boolean(state.documentHtml);
+  ui.docLocate.hidden = !state.documentHtml;
+  ui.docHint.textContent = state.documentName || "对照原文核对解析结果";
+}
+
+/** 在左侧原文里定位并高亮当前题目所在的段落 */
+function locateQuestionInDoc(question) {
+  if (!state.documentHtml || !question) return;
+  ui.docBody.querySelectorAll(".doc-block.active").forEach((block) => block.classList.remove("active"));
+
+  const number = Number(question.number);
+  let target = number > 0 ? ui.docBody.querySelector(`[data-question="${number}"]`) : null;
+  if (!target) {
+    const key = String(question.title || "").replace(/\s+/g, "").slice(0, 10);
+    if (key) {
+      target = Array.from(ui.docBody.querySelectorAll(".doc-block")).find((block) =>
+        block.textContent.replace(/\s+/g, "").includes(key),
+      );
+    }
+  }
+  if (!target) {
+    ui.docHint.textContent = "原文中未能定位到本题，可手动滚动查找";
+    return;
+  }
+  target.classList.add("active");
+  ui.docBody.scrollTop = Math.max(0, target.offsetTop - ui.docBody.clientHeight / 3);
+  ui.docHint.textContent = `已定位第 ${number || state.current + 1} 题`;
+}
+
+function proofOptionRow(option, checked) {
+  return `<div class="proof-option">
+    <input class="proof-option-key" type="text" value="${escapeHtml(option.key)}" aria-label="选项标号" />
+    <textarea class="proof-option-content" rows="2" aria-label="选项内容">${escapeHtml(option.content)}</textarea>
+    <label class="proof-option-right"><input class="proof-option-answer" type="checkbox" ${checked ? "checked" : ""} />正确</label>
+    <button class="proof-option-remove" type="button">删除</button>
+  </div>`;
+}
+
+function wireOptionRemove(row) {
+  row.querySelector(".proof-option-remove")?.addEventListener("click", () => row.remove());
+}
+
+function renderProofOptions(question) {
+  const answers = question.answer || [];
+  ui.proofOptions.innerHTML = (question.options || [])
+    .map((option) => proofOptionRow(option, answers.includes(option.key)))
+    .join("");
+  ui.proofOptions.querySelectorAll(".proof-option").forEach(wireOptionRemove);
+}
+
+function addProofOption() {
+  const index = ui.proofOptions.querySelectorAll(".proof-option").length;
+  const row = document.createElement("div");
+  row.className = "proof-option";
+  row.innerHTML = `<input class="proof-option-key" type="text" value="${OPTION_KEYS[index] || ""}" aria-label="选项标号" />
+    <textarea class="proof-option-content" rows="2" aria-label="选项内容"></textarea>
+    <label class="proof-option-right"><input class="proof-option-answer" type="checkbox" />正确</label>
+    <button class="proof-option-remove" type="button">删除</button>`;
+  wireOptionRemove(row);
+  ui.proofOptions.append(row);
+  row.querySelector(".proof-option-content").focus();
+}
+
+function syncProofFields() {
+  const subjective = ui.proofType.value === "subjective";
+  ui.proofOptionsField.hidden = subjective;
+  ui.proofAnswerField.hidden = !subjective;
+}
+
+function renderProofImages(question) {
+  const items = [...(question.images || []), ...(question.titleImages || [])]
+    .map((image, index) => ({ label: `题干图片 ${index + 1}`, src: image.src || image.dataUrl || "" }))
+    .concat(
+      (question.explanationImages || []).map((image, index) => ({
+        label: `解析图片 ${index + 1}`,
+        src: image.src || image.dataUrl || "",
+      })),
+    );
+  if (question.tableImage) {
+    items.push({ label: "原文表格", src: question.tableImage.src || question.tableImage.dataUrl || "" });
+  }
+  ui.proofImages.innerHTML = items.length
+    ? items
+        .filter((item) => item.src.startsWith("data:"))
+        .map(
+          (item) =>
+            `<figure class="proof-image"><img src="${escapeHtml(item.src)}" alt="${escapeHtml(item.label)}"><figcaption>${escapeHtml(item.label)}</figcaption></figure>`,
+        )
+        .join("")
+    : '<span class="proof-images-empty">本题没有解析到原文图片</span>';
+}
+
+function renderProofStatus(question) {
+  ui.proofStatus.textContent = question.reviewed ? "已校对" : "待校对";
+  ui.proofStatus.classList.toggle("done", Boolean(question.reviewed));
+}
+
+function renderProofread() {
+  const question = currentQuestion();
+  if (!question) return;
+  const reviewed = state.questions.filter((item) => item.reviewed).length;
+  ui.proofHeading.textContent = `解析结果校对 · 已校对 ${reviewed}/${state.questions.length}`;
+  ui.proofIndex.textContent = `${state.current + 1} / ${state.questions.length}`;
+  ui.proofType.value =
+    question.type === "subjective" ? "subjective" : question.type === "multiple" ? "multiple" : "single";
+  ui.proofStem.value = question.title || "";
+  ui.proofExplanation.value = question.explanation || "";
+  ui.proofAnswerText.value = referenceAnswerText(question);
+  ui.proofPrev.disabled = state.current === 0;
+  ui.proofNext.disabled = state.current === state.questions.length - 1;
+  renderProofOptions(question);
+  renderProofImages(question);
+  renderProofStatus(question);
+  syncProofFields();
+  locateQuestionInDoc(question);
+}
+
+function readProofForm() {
+  const rows = Array.from(ui.proofOptions.querySelectorAll(".proof-option"));
+  const options = [];
+  const answer = [];
+  rows.forEach((row) => {
+    const key = row.querySelector(".proof-option-key").value.trim();
+    const content = row.querySelector(".proof-option-content").value.trim();
+    if (!key && !content) return;
+    const finalKey = key || OPTION_KEYS[options.length] || `选项${options.length + 1}`;
+    options.push({ key: finalKey, content });
+    if (row.querySelector(".proof-option-answer").checked) answer.push(finalKey);
+  });
+  return {
+    type: ui.proofType.value,
+    title: ui.proofStem.value.trim(),
+    answerText: ui.proofAnswerText.value.trim(),
+    explanation: ui.proofExplanation.value.trim(),
+    options,
+    answer: [...new Set(answer)],
+  };
+}
+
+/** 表单内容与题目不一致时提示，避免改了一半就翻页丢失 */
+function proofDirty() {
+  const question = currentQuestion();
+  if (!question) return false;
+  const form = readProofForm();
+  if (form.type !== question.type) return true;
+  if (form.title !== (question.title || "")) return true;
+  if (form.explanation !== (question.explanation || "")) return true;
+  if (form.type === "subjective") return form.answerText !== referenceAnswerText(question);
+  const source = question.options || [];
+  return (
+    [...form.answer].sort().join(",") !== [...(question.answer || [])].sort().join(",") ||
+    form.options.length !== source.length ||
+    form.options.some(
+      (option, index) => !source[index] || option.key !== source[index].key || option.content !== source[index].content,
+    )
+  );
+}
+
+function switchProofQuestion(next) {
+  if (proofDirty() && !window.confirm("当前题目的修改还没保存，确定放弃吗？")) return;
+  next();
+}
+
+function snapshotQuestion(question) {
+  return {
+    type: question.type,
+    title: question.title,
+    options: (question.options || []).map((option) => ({ ...option })),
+    answer: [...(question.answer || [])],
+    answerText: referenceAnswerText(question),
+    explanation: question.explanation,
+  };
+}
+
+function saveProofread() {
+  const question = currentQuestion();
+  if (!question) return;
+  const form = readProofForm();
+  if (!form.title) {
+    showToast("题干不能为空");
+    return;
+  }
+  if (form.type === "subjective") {
+    if (!form.answerText) {
+      showToast("请填写主观题参考答案");
+      return;
+    }
+  } else {
+    if (form.options.length < 2) {
+      showToast("至少保留两个选项");
+      return;
+    }
+    if (!form.answer.length) {
+      showToast("请勾选正确答案");
+      return;
+    }
+  }
+
+  if (!state.originals.has(question.id)) {
+    state.originals.set(question.id, snapshotQuestion(question));
+  }
+  // 选项里可能带公式图片，按选项标号保留下来
+  const formulaImages = new Map((question.options || []).map((option) => [option.key, option.formulaImages || []]));
+  question.type = form.type;
+  question.title = form.title;
+  question.explanation = form.explanation;
+  question.reviewed = true;
+  if (form.type === "subjective") {
+    question.options = [];
+    question.answer = [];
+    question.answerText = form.answerText;
+  } else {
+    question.options = form.options.map((option) => ({
+      ...option,
+      formulaImages: formulaImages.get(option.key) || [],
+    }));
+    question.answer = form.answer;
+    question.answerText = "";
+  }
+
+  // 已作答的客观题按校对后的答案重新判分
+  const response = state.responses.get(question.id);
+  if (response?.submitted && question.type !== "subjective") {
+    response.correct = sameAnswer(response.selected, question.answer);
+  }
+
+  renderProofread();
+  render();
+  schedulePersist();
+  showToast("已保存校对结果");
+}
+
+function revertProofread() {
+  const question = currentQuestion();
+  const source = question ? state.originals.get(question.id) : null;
+  if (!source) {
+    showToast("这道题还是解析后的原始内容");
+    return;
+  }
+  question.type = source.type;
+  question.title = source.title;
+  question.options = source.options.map((option) => ({ ...option }));
+  question.answer = [...source.answer];
+  question.answerText = source.answerText;
+  question.explanation = source.explanation;
+  question.reviewed = false;
+  state.originals.delete(question.id);
+  renderProofread();
+  render();
+  schedulePersist();
+  showToast("已恢复解析结果");
+}
+
 function renderBankStatus(timestamp) {
   ui.bankStatusTitle.textContent = "已保存到题库";
   ui.bankStatusNote.textContent = timestamp
@@ -698,6 +954,11 @@ async function openBank(id) {
   });
   const savedIndex = Number(bank.progress?.current || 0);
   state.current = Math.min(Math.max(savedIndex, 0), state.questions.length - 1);
+  // 本机题库只存题目，原始 Word 需要重新导入才能显示原文
+  state.documentHtml = "";
+  state.documentName = "";
+  state.originals.clear();
+  setProofreading(false);
   ui.fileName.textContent = bank.fileName || `${bank.name}.docx`;
   ui.fileMeta.textContent = `${state.questions.length} 道题目 · 来自本机题库`;
   ui.bankName.textContent = bank.name;
@@ -718,6 +979,11 @@ function resetWorkspace() {
   state.questions = [];
   state.current = 0;
   state.responses.clear();
+  state.documentHtml = "";
+  state.documentName = "";
+  state.originals.clear();
+  state.proofreading = false;
+  ui.proofread.hidden = true;
   ui.welcome.hidden = false;
   ui.workspace.hidden = true;
 }
@@ -729,6 +995,10 @@ async function importBankFile(file) {
   state.questions = toWordQuestions(bank.questions);
   state.responses.clear();
   state.current = 0;
+  state.documentHtml = "";
+  state.documentName = "";
+  state.originals.clear();
+  setProofreading(false);
   ui.fileName.textContent = `${bank.name}.json`;
   ui.fileMeta.textContent = `${state.questions.length} 道题目 · 来自导入的题库文件`;
   ui.bankName.textContent = bank.name;
@@ -747,6 +1017,10 @@ async function startQuiz(file, result) {
   state.questions = result.questions;
   const saved = (await listBanks()).find((bank) => bank.source === "word" && bank.name === state.bankName);
   state.bankId = saved?.id || null;
+  state.documentHtml = result.documentHtml || "";
+  state.documentName = result.documentName || file.name;
+  state.originals.clear();
+  setProofreading(false);
   state.responses.clear();
   Object.entries(saved?.progress?.responses || {}).forEach(([key, value]) => {
     if (state.questions.some((question) => question.id === key)) state.responses.set(key, value);
@@ -764,13 +1038,14 @@ async function startQuiz(file, result) {
   if (result.unresolvedImages) {
     notes.push(`${result.unresolvedImages} 张 Word 图片无法读取，含公式图片的题目请核对原文。`);
   }
+  if (notes.length) notes.push("点「校对」可对照 Word 原文逐题核对并修正。");
   ui.skippedNote.hidden = notes.length === 0;
   ui.skippedNote.textContent = notes.join(" ");
   ui.welcome.hidden = true;
   ui.workspace.hidden = false;
   render();
   await persistBank();
-  showToast(`已解析 ${state.questions.length} 道题目，已存入题库`);
+  showToast(`已解析 ${state.questions.length} 道题目，可点「校对」对照原文核对`);
 }
 
 ui.input.addEventListener("change", async (event) => {
@@ -835,6 +1110,49 @@ ui.restart.addEventListener("click", () => {
   schedulePersist();
   showToast("已开始新的练习");
 });
+
+ui.proofreadButton.addEventListener("click", () => {
+  if (!state.questions.length) {
+    showToast("请先导入 Word 或打开题库");
+    return;
+  }
+  setProofreading(true);
+});
+
+ui.proofExit.addEventListener("click", () => {
+  switchProofQuestion(() => {
+    setProofreading(false);
+    render();
+  });
+});
+
+ui.proofPrev.addEventListener("click", () => {
+  if (state.current === 0) return;
+  switchProofQuestion(() => {
+    state.current -= 1;
+    renderProofread();
+    render();
+  });
+});
+
+ui.proofNext.addEventListener("click", () => {
+  if (state.current >= state.questions.length - 1) return;
+  switchProofQuestion(() => {
+    state.current += 1;
+    renderProofread();
+    render();
+  });
+});
+
+ui.proofType.addEventListener("change", () => syncProofFields());
+
+ui.proofAddOption.addEventListener("click", addProofOption);
+
+ui.proofSave.addEventListener("click", saveProofread);
+
+ui.proofRevert.addEventListener("click", revertProofread);
+
+ui.docLocate.addEventListener("click", () => locateQuestionInDoc(currentQuestion()));
 
 ui.deleteBank.addEventListener("click", async () => {
   if (!state.bankId) {
