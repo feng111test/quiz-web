@@ -41,11 +41,21 @@ function imageSrc(image) {
   return String(image.src || image.dataUrl || "");
 }
 
+/** 图片有三种形态：base64（教师上传/截图）、绝对地址、外置图片的相对路径（builtin-data 下） */
+export function resolveImageSrc(src) {
+  if (!src) return "";
+  if (/^(data:|blob:|https?:|\/\/)/i.test(src)) return src;
+  // Node / 单元测试里没有 DOM，原样返回，避免 new URL 报错
+  if (typeof document === "undefined") return src;
+  const base = import.meta.env?.BASE_URL || "/";
+  return new URL(`${base}builtin-data/${src}`, document.baseURI).href;
+}
+
 function readImages(list) {
   return (Array.isArray(list) ? list : [])
     .map(imageSrc)
-    .filter((src) => src.startsWith("data:"))
-    .map((src) => ({ src }));
+    .filter(Boolean)
+    .map((src) => ({ src: resolveImageSrc(src) }));
 }
 
 function splitTitleImages(title, images) {

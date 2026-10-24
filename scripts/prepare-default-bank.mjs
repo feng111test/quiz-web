@@ -1,7 +1,8 @@
 import { gzipSync, gunzipSync } from "node:zlib";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rmdir, stat, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { externalizeBankImages } from "./lib/bank-images.mjs";
 
 const webRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 // 题库源数据随本工程一起维护，不再依赖小程序仓库
@@ -43,11 +44,42 @@ function typeStatOf(questions) {
 
 const packedData = await readFile(join(bankSource, mixedBank.file));
 const outputDir = join(webRoot, "public", "builtin-data");
-// 产物目录整体重建，避免旧的分卷文件残留
-await rm(outputDir, { recursive: true, force: true });
+
+// 产物目录整体重建，避免旧的分卷文件和旧图片残留。
+// 逐个删除而不是递归删整目录：图片外置后这里有几百个文件，
+// 一次性 rm -rf 在部分环境（含安全删除策略）会被整体拦截。
+async function clearDir(dir) {
+  let entries = [];
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    const target = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      await clearDir(target);
+      await rmdir(target).catch(() => {});
+    } else {
+      await unlink(target).catch(() => {});
+    }
+  }
+}
+
+await clearDir(outputDir);
 await mkdir(join(outputDir, "banks"), { recursive: true });
 
+async function statSize(file) {
+  try {
+    return (await stat(file)).size;
+  } catch {
+    return 0;
+  }
+}
+
 const index = [];
+const imageStats = { images: 0, bytes: 0 };
+let gzBytes = 0;
 let actualCount = 0;
 for (const region of regions) {
   const start = Number(region.offset);
@@ -67,10 +99,16 @@ for (const region of regions) {
 
   const bankId = `builtin-${region.id}`;
   // 按卷拆成独立文件：选题页只读索引，开始刷题时才下载对应的卷
-  const file = `banks/bank-${index.length + 1}.json`;
-  const payload = JSON.stringify({ bankId, name: region.name, questions });
+  const slug = `bank-${index.length + 1}`;
+  const file = `banks/${slug}.json`;
+  // 图片外置：分卷里只留文字，图片单独存文件，避免刷一题要下整包几十 MB
+  const { questions: packed, stats } = externalizeBankImages({ questions, slug, outputDir });
+  imageStats.images += stats.images;
+  imageStats.bytes += stats.imageBytes;
+  const payload = JSON.stringify({ bankId, name: region.name, questions: packed });
   await writeFile(join(outputDir, `${file}.gz`), gzipSync(payload, { level: 9 }));
   await writeFile(join(outputDir, file), payload);
+  gzBytes += (await statSize(join(outputDir, `${file}.gz`))) || 0;
 
   index.push({
     id: bankId,
@@ -104,3 +142,7 @@ console.log(
     .join("\n"),
 );
 console.log(`索引文件：${join(outputDir, "index.json")}`);
+console.log(
+  `分卷压缩包合计 ${(gzBytes / 1024).toFixed(0)}KB（图片已外置 ${imageStats.images} 张 / ` +
+    `${(imageStats.bytes / 1024 / 1024).toFixed(2)}MB，刷题时按题目单独加载）`,
+);

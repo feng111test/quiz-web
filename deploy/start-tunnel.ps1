@@ -18,6 +18,8 @@ token 从 ~/natapp/tunnels.json 按端口自动匹配，不写进项目。
 param(
     [int]$Port = 80,
     [string]$TunnelCommand = "",
+    [ValidateSet("", "cpolar", "natapp")]
+    [string]$Tool = "",
     [switch]$Build
 )
 
@@ -42,6 +44,17 @@ function Get-NatappToken {
     $hit = @($json.tunnels) | Where-Object { $_.local -match ":$LocalPort$" } | Select-Object -First 1
     if (-not $hit) { return $null }
     return $hit.authtoken
+}
+
+function Get-CpolarCommand {
+    param([int]$LocalPort)
+    $exe = Join-Path $HOME "cpolar\cpolar.exe"
+    if (-not (Test-Path $exe)) {
+        $cmd = Get-Command cpolar -EA SilentlyContinue
+        if ($cmd) { $exe = "cpolar" } else { return $null }
+    }
+    # -region=cn 连国内节点；-log=stdout 才能在终端看到公网地址
+    return "& `"$exe`" http $LocalPort -region=cn -log=stdout"
 }
 
 # 1) 账号密码等配置
@@ -74,7 +87,11 @@ if ($Build -or -not (Test-Path (Join-Path $root "dist/index.html"))) {
 
 # 4) 决定穿透命令：命令行 > 环境变量 > natapp 自动匹配
 if (-not $TunnelCommand) { $TunnelCommand = $env:QUIZ_TUNNEL_COMMAND }
-if (-not $TunnelCommand) {
+if (-not $TunnelCommand -and $Tool -eq "cpolar") {
+    $TunnelCommand = Get-CpolarCommand -LocalPort $Port
+    if (-not $TunnelCommand) { throw "没找到 cpolar，请先安装或改用 -Tool natapp" }
+}
+if (-not $TunnelCommand -and $Tool -ne "cpolar") {
     $exe = Join-Path (Get-NatappDir) "natapp.exe"
     $token = Get-NatappToken -LocalPort $Port
     if ($token -and (Test-Path $exe)) {
@@ -82,7 +99,8 @@ if (-not $TunnelCommand) {
         $TunnelCommand = "& `"$exe`" -authtoken=$token -log=stdout"
     }
 }
-if (-not $TunnelCommand) { $TunnelCommand = "cpolar http $Port" }
+if (-not $TunnelCommand) { $TunnelCommand = Get-CpolarCommand -LocalPort $Port }
+if (-not $TunnelCommand) { throw "没找到可用的穿透客户端（cpolar 或 natapp）" }
 
 # 5) 启动后端（后台，日志进 server/data）
 $env:PORT = "$Port"

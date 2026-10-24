@@ -1,6 +1,7 @@
 node_modules/
 dist/
 dist-quiz/
+dist-verify/
 public/tessdata/
 public/builtin-data/
 server/data/

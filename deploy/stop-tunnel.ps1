@@ -1,17 +1,21 @@
 <#
-停止穿透发布：停掉 natapp 客户端和本地后端。
+停止穿透发布：停掉穿透客户端（natapp / cpolar）和本地后端。
 
 用法（项目根目录执行）：
-  npm run stop:tunnel                                # 按 tunnels.json 里 80 端口对应的那条隧道停
-  npm run stop:tunnel -- -Port 8080                  # 指定端口对应的隧道
+  npm run stop:tunnel                                # 停后端 + natapp(80 端口对应隧道) + cpolar
+  npm run stop:tunnel -- -Port 8080                  # 指定端口对应的 natapp 隧道
   npm run stop:tunnel -- -All                        # 连本机的其他 natapp 进程一起停
+  npm run stop:tunnel -- -Tool cpolar                # 只停 cpolar + 后端
+  npm run stop:tunnel -- -Tool natapp                # 只停 natapp + 后端
   pwsh -File deploy/stop-tunnel.ps1 -OnlyBackend     # 只停后端，保留隧道
 
-只杀两类进程：命令行含 server/index.js 的 node、命令行含 natapp 的 natapp.exe。
+只杀三类进程：命令行含 server/index.js 的 node、natapp.exe、cpolar.exe。
 不会动 vite 开发服务器或其他 node 进程。
 #>
 param(
     [int]$Port = 80,
+    [ValidateSet("", "cpolar", "natapp")]
+    [string]$Tool = "",
     [switch]$All,
     [switch]$OnlyBackend
 )
@@ -40,7 +44,9 @@ if ($OnlyBackend) { return }
 
 # 2) 停 natapp：默认只停当前隧道那条，-All 才停全部
 $natapps = @(Get-CimInstance Win32_Process -Filter "Name='natapp.exe'")
-if (-not $natapps.Count) {
+if ($Tool -eq "cpolar") {
+    Write-Host "跳过 natapp（-Tool cpolar）" -ForegroundColor DarkGray
+} elseif (-not $natapps.Count) {
     Write-Host "没有运行中的 natapp 进程" -ForegroundColor DarkGray
 } elseif ($All) {
     $natapps | ForEach-Object {
@@ -72,7 +78,22 @@ if (-not $natapps.Count) {
     }
 }
 
-# 3) 确认端口释放
+# 3) 停 cpolar：免费版一般只有一条隧道，直接按进程名停
+if ($Tool -eq "natapp") {
+    Write-Host "跳过 cpolar（-Tool natapp）" -ForegroundColor DarkGray
+} else {
+    $cpolars = @(Get-CimInstance Win32_Process -Filter "Name='cpolar.exe'")
+    if (-not $cpolars.Count) {
+        Write-Host "没有运行中的 cpolar 进程" -ForegroundColor DarkGray
+    } else {
+        $cpolars | ForEach-Object {
+            Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+            Write-Host "已停止 cpolar 进程 PID $($_.ProcessId)" -ForegroundColor Green
+        }
+    }
+}
+
+# 4) 确认端口释放
 Start-Sleep -Seconds 2
 $still = Get-NetTCPConnection -LocalPort $Port -State Listen -EA SilentlyContinue
 if ($still) {

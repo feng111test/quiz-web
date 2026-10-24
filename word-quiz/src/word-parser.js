@@ -142,10 +142,13 @@ export function parseQuestion(block, number) {
   const answerIndex = lines.findIndex((line) => answerFromLine(line) || ANSWER_LABEL_START.test(line));
   const hasAnswer = answerIndex >= 0;
   const answer = hasAnswer ? answerFromLine(lines[answerIndex]) : null;
-  const analysisIndex = hasAnswer
-    ? lines.findIndex((line, index) => index > answerIndex && ANALYSIS_LABEL.test(line))
-    : -1;
-  const stemLines = hasAnswer ? lines.slice(0, answerIndex) : lines;
+  const analysisIndex = lines.findIndex(
+    (line, index) => (!hasAnswer || index > answerIndex) && ANALYSIS_LABEL.test(line),
+  );
+  const stemLines = lines.slice(
+    0,
+    hasAnswer ? answerIndex : analysisIndex >= 0 ? analysisIndex : lines.length,
+  );
   const parsed = parseInstrumentTable(stemLines) || parseChoices(stemLines);
   const isChoice = Boolean(answer) && parsed.options.length >= 2;
 

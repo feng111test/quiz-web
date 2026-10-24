@@ -61,12 +61,40 @@ test("Word 解析：填空/解答题按主观题导入并保留文本答案", ()
 });
 
 test("Word 解析：没有选项且没有答案的题也不会被丢弃", () => {
-  const text = ["一、选择题", "1．题干（  ）", "A．甲", "B．乙", "答案：A", "2．请简述理由。", "答案：因为……"].join(
-    "\n",
-  );
+  const text = [
+    "一、选择题",
+    "1．题干（  ）",
+    "A．甲",
+    "B．乙",
+    "答案：A",
+    "2．请简述理由。",
+    "【解析】本题考查反应速率。",
+  ].join("\n");
   const { questions } = parseQuestionBank(text);
   const second = questions.find((question) => question.number === 2);
   assert.equal(second.type, "subjective");
   assert.equal(second.options.length, 0);
-  assert.match(second.answerText, /因为/);
+  assert.equal(second.answerText, "");
+  assert.equal(second.title, "请简述理由。");
+  assert.equal(second.explanation, "本题考查反应速率。");
+});
+
+test("Word 解析：支持【答案】标记的解答题", () => {
+  const text = [
+    "一、选择题",
+    "1．题干（  ）",
+    "A．甲",
+    "B．乙",
+    "答案：A",
+    "2．计算下列物质的量。",
+    "【答案】（1）0.5 mol",
+    "（2）1 mol",
+    "【详解】略。",
+  ].join("\n");
+  const { questions } = parseQuestionBank(text);
+  const second = questions.find((question) => question.number === 2);
+  assert.equal(second.type, "subjective");
+  assert.match(second.answerText, /0\.5 mol/);
+  assert.match(second.answerText, /1 mol/);
+  assert.equal(second.explanation, "略。");
 });

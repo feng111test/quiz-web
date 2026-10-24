@@ -21,7 +21,8 @@ $env:SOURCE_PDF_DIR = "F:/2026年高考化学真题（全国各地共22省）"
 # $env:HTTP_PROXY  = "http://127.0.0.1:7897"
 
 # 自定义穿透命令：留空则自动用 ~/natapp/tunnels.json 里匹配端口的 authtoken 启动 natapp
-# $env:QUIZ_TUNNEL_COMMAND = "cpolar http 80"
+# 想固定用 cpolar（某些网络会拦 natapp 的认证域名）：
+# $env:QUIZ_TUNNEL_COMMAND = "& `"`$HOME\cpolar\cpolar.exe`" http 80 -region=cn -log=stdout"
 
 # 本地只想自己用时，把监听地址改回本机
 # $env:HOST = "127.0.0.1"

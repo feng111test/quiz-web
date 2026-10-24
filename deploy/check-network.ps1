@@ -12,7 +12,7 @@
   两者都是 000                域名被直接阻断，或 DNS / 出口不通
 #>
 param(
-    [string]$Targets = "natapp.cn,auth.natapp.cn",
+    [string]$Targets = "natapp.cn,auth.natapp.cn,www.cpolar.com",
     [switch]$SkipProxy
 )
 

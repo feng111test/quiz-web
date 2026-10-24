@@ -3,6 +3,8 @@
 本项目为 **Vite + Express(Node.js) + SQLite** 的题库刷题网页版。  
 在另一台电脑上运行，只需拉取代码、安装依赖、执行启动脚本即可。
 
+> 两台电脑不在同一局域网、需要从本机远程控制目标机时，见 [deploy/REMOTE.md](deploy/REMOTE.md)（Tailscale + 远程桌面 / SSH + Remote-SSH）。
+
 ---
 
 ## 一、新电脑需要配置什么

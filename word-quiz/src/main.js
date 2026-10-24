@@ -11,10 +11,14 @@ import { downloadBankFile, readBankFile, toWordQuestions } from "../../src/bank-
 import {
   FORMULA_TOKEN,
   escapeHtml,
-  formulaCount,
   renderFormulaContent,
 } from "../../src/question-text.js";
 import { parseQuestionBank } from "./word-parser.js";
+import {
+  collectExplanationImages,
+  matchQuestionImages,
+  matchQuestionSourceTable,
+} from "./word-images.js";
 
 document.documentElement.classList.toggle("embedded", new URLSearchParams(location.search).has("embedded"));
 
@@ -71,6 +75,10 @@ const FORMULA_SPACING_MIN = 150;
 const FORMULA_SPACING_MAX = 1100;
 const FORMULA_IMAGE_ROW_TOLERANCE = 3;
 const TYPE_LABELS = { single: "单选题", multiple: "多选题", subjective: "主观题" };
+const FORMULA_PLACEHOLDER = "〔公式〕";
+const VML_NS = "urn:schemas-microsoft-com:vml";
+const REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+const EMU_PER_POINT = 12700;
 
 function showToast(message) {
   ui.toast.textContent = message;
@@ -203,10 +211,16 @@ function styleLength(style, property) {
   return value ? Number(value) : 0;
 }
 
-async function extractVmlImagePages(zip, documentXmlText) {
+function emuToPoints(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number / EMU_PER_POINT : 0;
+}
+
+async function extractFormulaImagePages(zip, documentXmlText) {
   const document = new DOMParser().parseFromString(documentXmlText, "application/xml");
-  const shapes = Array.from(document.getElementsByTagNameNS("urn:schemas-microsoft-com:vml", "shape"));
-  if (!shapes.length) return { pages: [], unresolvedImages: 0 };
+  const hasVml = document.getElementsByTagNameNS(VML_NS, "shape").length > 0;
+  const hasDrawing = document.getElementsByTagNameNS("*", "drawing").length > 0;
+  if (!hasVml && !hasDrawing) return { pages: [], unresolvedImages: 0 };
 
   const relationshipsFile = zip.file("word/_rels/document.xml.rels");
   if (!relationshipsFile) throw new Error("Word 中包含公式图片，但找不到图片关系文件");
@@ -226,49 +240,104 @@ async function extractVmlImagePages(zip, documentXmlText) {
     ]),
   );
   const body = document.getElementsByTagNameNS("*", "body")[0];
+  if (!body) return { pages: [], unresolvedImages: 0 };
   const pages = [];
+  const imageCache = new Map();
   let unresolvedImages = 0;
+
+  const readImage = async (relationshipId) => {
+    if (!relationshipId) return null;
+    if (imageCache.has(relationshipId)) return imageCache.get(relationshipId);
+    const relationship = relationships.get(relationshipId);
+    if (!relationship || relationship.external) {
+      imageCache.set(relationshipId, null);
+      return null;
+    }
+    const path = zipPathForWordTarget(relationship.target);
+    const file = zip.file(path);
+    if (!file) {
+      imageCache.set(relationshipId, null);
+      return null;
+    }
+    const src = `data:${mimeTypeForImage(path)};base64,${await file.async("base64")}`;
+    imageCache.set(relationshipId, src);
+    return src;
+  };
 
   for (const [paragraphIndex, paragraph] of Array.from(body.children).entries()) {
     if (localName(paragraph) !== "p") continue;
-    const paragraphShapes = Array.from(
-      paragraph.getElementsByTagNameNS("urn:schemas-microsoft-com:vml", "shape"),
-    );
-    if (!paragraphShapes.length) continue;
 
     const images = [];
-    for (const shape of paragraphShapes) {
+    const pushImage = (image) => {
+      // 同一张图可能同时以 VML 与 DrawingML 出现（mc:AlternateContent），按位置近似去重
+      const duplicate = images.some(
+        (item) =>
+          item.src === image.src &&
+          Math.abs(item.x - image.x) <= 6 &&
+          Math.abs(item.y - image.y) <= 4,
+      );
+      if (duplicate) return;
+      images.push(image);
+    };
+
+    // 旧版 VML 浮动公式图
+    for (const shape of Array.from(paragraph.getElementsByTagNameNS(VML_NS, "shape"))) {
       const style = shape.getAttribute("style");
       const width = styleLength(style, "width");
       const height = styleLength(style, "height");
       if (width < 6 || height < 6) continue;
 
       const imageData = shape.getElementsByTagNameNS("*", "imagedata")[0];
-      const relationshipId = imageData?.getAttributeNS(
-        "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
-        "id",
-      );
-      const relationship = relationships.get(relationshipId);
-      if (!relationship || relationship.external) {
+      const relationshipId = imageData?.getAttributeNS(REL_NS, "id") || imageData?.getAttribute("r:id");
+      const src = await readImage(relationshipId);
+      if (!src) {
         unresolvedImages += 1;
         continue;
       }
-
-      const path = zipPathForWordTarget(relationship.target);
-      const file = zip.file(path);
-      if (!file) {
-        unresolvedImages += 1;
-        continue;
-      }
-
-      images.push({
+      pushImage({
         x: styleLength(style, "margin-left"),
         y: styleLength(style, "margin-top"),
         width,
         height,
-        src: `data:${mimeTypeForImage(path)};base64,${await file.async("base64")}`,
+        src,
       });
     }
+
+    // 新版 DrawingML 图片（Word 公式也可能以这种形式保存）
+    for (const drawing of Array.from(paragraph.getElementsByTagNameNS("*", "drawing"))) {
+      const blip = drawing.getElementsByTagNameNS("*", "blip")[0];
+      if (!blip) continue;
+      const relationshipId = blip.getAttributeNS(REL_NS, "embed") || blip.getAttribute("r:embed");
+      const src = await readImage(relationshipId);
+      if (!src) {
+        unresolvedImages += 1;
+        continue;
+      }
+
+      const extent = drawing.getElementsByTagNameNS("*", "extent")[0];
+      let width = extent ? emuToPoints(extent.getAttribute("cx")) : 0;
+      let height = extent ? emuToPoints(extent.getAttribute("cy")) : 0;
+      if (!width || !height) {
+        const shapeExtent = drawing.getElementsByTagNameNS("*", "ext")[0];
+        width = width || emuToPoints(shapeExtent?.getAttribute("cx"));
+        height = height || emuToPoints(shapeExtent?.getAttribute("cy"));
+      }
+      if (width < 6 || height < 6) continue;
+
+      const positionH = drawing.getElementsByTagNameNS("*", "positionH")[0];
+      const positionV = drawing.getElementsByTagNameNS("*", "positionV")[0];
+      const offsetH = positionH?.getElementsByTagNameNS("*", "posOffset")[0];
+      const offsetV = positionV?.getElementsByTagNameNS("*", "posOffset")[0];
+      pushImage({
+        x: emuToPoints(offsetH?.textContent),
+        y: emuToPoints(offsetV?.textContent),
+        width,
+        height,
+        src,
+      });
+    }
+
+    if (!images.length) continue;
 
     const rows = [];
     for (const image of images.sort((left, right) => left.y - right.y || left.x - right.x)) {
@@ -283,109 +352,6 @@ async function extractVmlImagePages(zip, documentXmlText) {
   }
 
   return { pages, unresolvedImages };
-}
-
-function matchQuestionImages(question, imagePages, cursor, paragraphRange = null) {
-  const targets = [
-    { text: question.title, setImages: (images) => (question.titleImages = images) },
-    ...question.options.map((option) => ({
-      text: option.content,
-      setImages: (images) => (option.formulaImages = images),
-    })),
-  ].map((target) => ({ ...target, count: formulaCount(target.text) })).filter((target) => target.count > 0);
-  if (!targets.length) return null;
-
-  for (let pageIndex = cursor.page; pageIndex < imagePages.length; pageIndex += 1) {
-    const paragraphIndex = imagePages[pageIndex].paragraphIndex;
-    if (
-      paragraphRange &&
-      (paragraphIndex < paragraphRange.start || paragraphIndex >= paragraphRange.end)
-    ) {
-      continue;
-    }
-    const rows = imagePages[pageIndex].rows;
-    const startAt = pageIndex === cursor.page ? cursor.row : 0;
-    for (let start = startAt; start < rows.length; start += 1) {
-      let targetIndex = 0;
-      let complete = true;
-      let endRow = start;
-      const assignments = targets.map(() => []);
-      for (let rowIndex = start; rowIndex < rows.length && targetIndex < targets.length; rowIndex += 1) {
-        for (const image of rows[rowIndex].images) {
-          if (targetIndex >= targets.length) {
-            complete = false;
-            break;
-          }
-          assignments[targetIndex].push(image);
-          if (assignments[targetIndex].length === targets[targetIndex].count) {
-            targetIndex += 1;
-          }
-        }
-        endRow = rowIndex + 1;
-        if (!complete) break;
-      }
-      if (complete && targetIndex === targets.length) {
-        assignments.forEach((images, index) => targets[index].setImages(images));
-        return { page: pageIndex, row: endRow };
-      }
-    }
-  }
-  return null;
-}
-
-function matchQuestionSourceTable(question, imagePages, cursor) {
-  if (!question.sourceTable) return null;
-
-  for (let pageIndex = cursor.page; pageIndex < imagePages.length; pageIndex += 1) {
-    const rows = imagePages[pageIndex].rows;
-    const startAt = pageIndex === cursor.page ? cursor.row : 0;
-    for (let rowIndex = startAt; rowIndex < rows.length; rowIndex += 1) {
-      const image = rows[rowIndex].images.find(
-        (candidate) =>
-          candidate.width >= 180 &&
-          candidate.height >= 180 &&
-          candidate.width / candidate.height >= 0.9 &&
-          candidate.width / candidate.height <= 1.05,
-      );
-      if (!image) continue;
-      question.tableImage = image;
-      return { page: pageIndex, row: rowIndex + 1 };
-    }
-  }
-  return null;
-}
-
-function collectExplanationImages(question, imagePages, cursor, endCursor) {
-  let remaining = formulaCount(question.explanation);
-  if (!remaining) return cursor;
-
-  const images = [];
-  let page = cursor.page;
-  let row = cursor.row;
-  while (
-    page < imagePages.length &&
-    remaining > 0 &&
-    (page < endCursor.page || (page === endCursor.page && row < endCursor.row))
-  ) {
-    const rows = imagePages[page].rows;
-    while (
-      row < rows.length &&
-      remaining > 0 &&
-      (page < endCursor.page || (page === endCursor.page && row < endCursor.row))
-    ) {
-      const rowImages = rows[row].images;
-      images.push(...rowImages);
-      remaining -= rowImages.length;
-      row += 1;
-    }
-    if (remaining > 0) {
-      page += 1;
-      row = 0;
-    }
-  }
-
-  question.explanationImages = images;
-  return { page, row };
 }
 
 async function loadWord(file) {
@@ -404,7 +370,7 @@ async function loadWord(file) {
   const xml = await documentXml.async("string");
   const result = parseQuestionBank(extractDocumentText(xml));
   const paragraphIndexes = questionParagraphIndexes(xml);
-  const { pages, unresolvedImages } = await extractVmlImagePages(zip, xml);
+  const { pages, unresolvedImages } = await extractFormulaImagePages(zip, xml);
   let cursor = { page: 0, row: 0 };
   const questionImagePositions = result.questions.map(() => null);
   for (const [index, question] of result.questions.entries()) {
@@ -474,7 +440,7 @@ function renderList() {
       const mark = !response.submitted ? "" : response.correct === true ? "✓" : response.correct === false ? "✗" : "?";
       return `<button class="list-item ${index === state.current ? "active" : ""} ${status}" data-index="${index}" type="button">
         <span class="list-index">${String(index + 1).padStart(2, "0")}</span>
-        <span class="list-title">${renderFormulaContent(question.title, question.titleImages)}</span>
+        <span class="list-title">${renderFormulaContent(question.title, question.titleImages, FORMULA_PLACEHOLDER)}</span>
         <span class="list-mark">${mark}</span>
       </button>`;
     })
@@ -517,7 +483,7 @@ function renderOptions(question, response) {
       return `<label class="${optionClass}">
         <input type="${question.type === "multiple" ? "checkbox" : "radio"}" name="answer" value="${option.key}" ${selected ? "checked" : ""} ${isSubmitted ? "disabled" : ""}>
         <span class="option-key">${option.key}</span>
-        <span class="option-content">${renderFormulaContent(option.content, option.formulaImages)}</span>
+        <span class="option-content">${renderFormulaContent(option.content, option.formulaImages, FORMULA_PLACEHOLDER)}</span>
         ${isSubmitted && correct ? '<span class="option-mark">正确答案</span>' : ""}
       </label>`;
     })
@@ -555,7 +521,7 @@ function explanationHtml(question) {
   return `<div class="feedback-explanation"><strong>解析</strong><p>${renderFormulaContent(
     question.explanation,
     [],
-    question.explanationImages?.length ? "原文公式见下方" : "原文公式图片未能匹配",
+    question.explanationImages?.length ? "原文公式见下方" : FORMULA_PLACEHOLDER,
   )}</p>${gallery}</div>`;
 }
 
@@ -579,7 +545,7 @@ function renderFeedback(question, response) {
         graded ? (response.correct ? "已标记为答对" : "已标记为答错") : "已提交，请对照参考答案自评"
       }</div>
       <div class="feedback-answer">参考答案：<div class="reference-text">${
-        reference ? escapeHtml(reference) : "文档未提供参考答案"
+        reference ? renderFormulaContent(reference, [], FORMULA_PLACEHOLDER) : "文档未提供参考答案"
       }</div></div>
       ${explanationHtml(question)}
       <div class="self-grade"><span>你答对了吗？</span><button type="button" class="button button-quiet" data-grade="correct">答对了</button><button type="button" class="button button-quiet" data-grade="wrong">答错了</button></div>`;
@@ -621,7 +587,7 @@ function render() {
 
   ui.number.textContent = `第 ${state.current + 1} 题`;
   ui.type.textContent = TYPE_LABELS[question.type] || "单选题";
-  ui.title.innerHTML = renderFormulaContent(question.title, question.titleImages);
+  ui.title.innerHTML = renderFormulaContent(question.title, question.titleImages, FORMULA_PLACEHOLDER);
   ui.sourceTable.hidden = !question.sourceTable;
   ui.sourceTable.innerHTML = question.tableImage
     ? `<figcaption>Word 原文表格图片（含公式）</figcaption><img src="${escapeHtml(question.tableImage.src)}" alt="Word 原文表格及其中的公式">`

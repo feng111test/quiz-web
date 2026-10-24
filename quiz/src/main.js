@@ -1,7 +1,7 @@
 import "./styles.css";
 import { formatSavedAt } from "../../src/question-bank.js";
 import { escapeHtml, renderFormulaContent } from "../../src/question-text.js";
-import { sameAnswer, shuffle, toQuizQuestions } from "../../src/quiz-model.js";
+import { resolveImageSrc, sameAnswer, shuffle, toQuizQuestions } from "../../src/quiz-model.js";
 import {
   applyCorrections,
   clearCorrection,
@@ -310,6 +310,8 @@ async function loadBuiltinIndex() {
 
 async function loadBankQuestions(bank) {
   const file = bank.file;
+  // 服务端校正与题目下载并行发起，避免两者串行叠加等待时间
+  const correctionsPromise = correctionApi.list(bank.id).catch(() => null);
   let data = null;
   try {
     data = await readBuiltinFile(builtinUrl(`${file}.gz?v=3`));
@@ -322,7 +324,7 @@ async function loadBankQuestions(bank) {
     toQuizQuestions({ id: bank.id, name: bank.name, source: "builtin", questions: list }),
   );
   // 教师校对过的内容以服务端为准，覆盖本机校正并对所有人生效
-  await applyServerCorrections(bank);
+  await applyServerCorrections(bank, correctionsPromise);
   bank.questionCount = bank.questions.length;
   bank.typeStat = bank.questions.reduce((stat, question) => {
     stat[question.type] = (stat[question.type] || 0) + 1;
@@ -332,9 +334,13 @@ async function loadBankQuestions(bank) {
 }
 
 /** 拉取服务端校对结果并覆盖到题目上（未登录也能读到，接口本身不校验身份） */
-async function applyServerCorrections(bank) {
+async function applyServerCorrections(bank, pending) {
   try {
-    const data = await correctionApi.list(bank.id);
+    // 最多等 6 秒，超时就先用本地校正开始刷题，不让网络问题卡住整页
+    const data = await Promise.race([
+      pending || correctionApi.list(bank.id),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("拉取校对超时")), 6000)),
+    ]);
     const list = Array.isArray(data?.corrections) ? data.corrections : [];
     if (!list.length) return;
     const map = new Map(list.map((item) => [`${item.bankId}::${item.questionId}`, item]));
@@ -621,6 +627,23 @@ function renderPractice() {
       : `共 ${total} 题 · 答对 ${correct} 题 · 正确率 ${accuracy}%`;
     ui.practiceWrongOnly.disabled = total - correct === 0;
   }
+  prefetchNextImages();
+}
+
+/** 图片外置后按需加载，提前把下一题的图拉进浏览器缓存，翻页时不会先空白再出图 */
+function prefetchNextImages() {
+  const next = state.pool[state.index + 1];
+  if (!next) return;
+  const images = [
+    ...(next.images || []),
+    ...(next.titleImages || []),
+    ...(next.options || []).flatMap((option) => option.formulaImages || []),
+  ];
+  images.forEach((image) => {
+    if (!image?.src || image.src.startsWith("data:")) return;
+    const preload = new Image();
+    preload.src = image.src;
+  });
 }
 
 /** 主观题：文本作答，不自动判分，提交后对照参考答案自评 */
@@ -981,7 +1004,7 @@ function renderCorrectImages() {
   ];
   const rows = groups.flatMap(([key, label]) => state.correctionImages[key].map((image, index) => `
     <figure class="correct-image-item">
-      <img src="${escapeHtml(image.src || image.dataUrl || "")}" alt="${label} ${index + 1}" />
+      <img src="${escapeHtml(resolveImageSrc(image.src || image.dataUrl || ""))}" alt="${label} ${index + 1}" />
       <figcaption>${label} ${index + 1}<button class="correct-image-remove" type="button" data-image-group="${key}" data-image-index="${index}">删除</button></figcaption>
     </figure>`));
   ui.correctImages.innerHTML = rows.length ? rows.join("") : '<span class="correct-images-empty">暂无图片，可从左侧原卷截图添加</span>';
