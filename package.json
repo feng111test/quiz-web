@@ -13,11 +13,12 @@
     "start": "node server/index.js",
     "start:lan": "pwsh -NoProfile -File deploy/start-lan.ps1",
     "start:tunnel": "pwsh -NoProfile -File deploy/start-tunnel.ps1",
+    "stop:tunnel": "pwsh -NoProfile -File deploy/stop-tunnel.ps1",
     "backup:db": "pwsh -NoProfile -File deploy/backup-db.ps1",
     "seed": "node server/seed-cli.js",
-    "test": "node --test",
-    "test:server": "node --test server/tests",
-    "test:client": "node --test src/tests"
+    "test": "node --test --test-concurrency=1",
+    "test:server": "node --test --test-concurrency=1 \"server/tests/*.test.js\"",
+    "test:client": "node --test --test-concurrency=1 \"src/tests/*.test.js\""
   },
   "dependencies": {
     "@napi-rs/canvas": "0.1.100",

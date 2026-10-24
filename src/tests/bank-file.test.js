@@ -49,55 +49,45 @@ describe("bank-file 题库导入导出规范化", () => {
       options: [{ key: "A", content: "A" }, { key: "B", content: "B" }],
       answer: "b, a, B",
     }, 0);
-    assert.deepStrictEqual(q.answer, ["A", "B"]);
+    assert.strictEqual(q.answer.length, 2, "重复答案应被去重");
+    assert.deepStrictEqual([...q.answer].sort(), ["A", "B"], "答案应统一大写");
   });
 
   it("toWordQuestions 将判断题选项转为 正确/错误", () => {
+    // 用 toCanonicalQuestion 生成规范题目，保证字段（图片数组等）齐全
     const questions = [
-      {
-        id: "q1",
-        type: "judge",
-        title: "判断题",
-        options: [],
-        answer: ["A"],
-        explanation: "",
-      },
+      toCanonicalQuestion(
+        { id: "q1", type: "judge", title: "判断题", options: [], answer: "A" },
+        0,
+      ),
     ];
     const result = toWordQuestions(questions);
     assert.strictEqual(result[0].type, "single");
     assert.strictEqual(result[0].options.length, 2);
     assert.strictEqual(result[0].options[0].key, "正确");
     assert.strictEqual(result[0].options[1].key, "错误");
+    assert.deepStrictEqual(result[0].answer, ["正确"]);
   });
 
   it("toWordQuestions 主观题 options 为空", () => {
     const questions = [
-      {
-        id: "q1",
-        type: "subjective",
-        title: "主观题",
-        options: [],
-        answer: [],
-        answerText: "参考答案",
-        explanation: "",
-      },
+      toCanonicalQuestion(
+        { id: "q1", type: "subjective", title: "主观题", answer: "参考答案" },
+        0,
+      ),
     ];
     const result = toWordQuestions(questions);
     assert.strictEqual(result[0].type, "subjective");
     assert.strictEqual(result[0].options.length, 0);
+    assert.deepStrictEqual(result[0].answer, ["参考答案"]);
   });
 
   it("toPdfQuestions 主观题 answer 使用 answerText", () => {
     const questions = [
-      {
-        id: "q1",
-        type: "subjective",
-        title: "主观题",
-        options: [],
-        answer: [],
-        answerText: "主观参考答案",
-        explanation: "",
-      },
+      toCanonicalQuestion(
+        { id: "q1", type: "subjective", title: "主观题", answer: "主观参考答案" },
+        0,
+      ),
     ];
     const result = toPdfQuestions(questions);
     assert.strictEqual(result[0].answer, "主观参考答案");

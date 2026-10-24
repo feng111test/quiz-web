@@ -17,6 +17,8 @@ export default defineConfig({
     },
   },
   build: {
+    // 不生成 source map：生产包被下载后无法还原出可读源码
+    sourcemap: false,
     rollupOptions: {
       input: {
         main: resolve(import.meta.dirname, "index.html"),

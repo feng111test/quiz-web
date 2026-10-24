@@ -7,6 +7,7 @@ import {
   stopTestServer,
   clearDb,
   registerAs,
+  createUserWithRole,
   loginAs,
   authedFetch,
 } from "./setup.js";
@@ -14,17 +15,19 @@ import {
 let server;
 let baseUrl;
 let adminToken;
+let adminId;
 let studentToken;
 
 beforeEach(async () => {
   clearDb();
   ({ server, baseUrl } = await startTestServer());
 
-  // 种子账号：admin / admin123
-  await registerAs(baseUrl, {
+  // 管理员不能通过注册接口创建（注册一律是学生），直接落库
+  adminId = await createUserWithRole({
     username: "admin",
     password: "admin123",
     displayName: "系统管理员",
+    role: "admin",
   });
   const a = await loginAs(baseUrl, "admin", "admin123");
   adminToken = a.token;
@@ -50,9 +53,13 @@ describe("安全测试", () => {
     const distSecret = path.resolve("dist/jwt-secret.txt");
     assert.ok(!fs.existsSync(publicSecret), "JWT 密钥不应出现在 public 目录");
     assert.ok(!fs.existsSync(distSecret), "JWT 密钥不应出现在 dist 目录");
-    // 如果文件存在，应只在服务端 data 目录
+    // 如果文件存在，应只在服务端 data 目录（用路径比较，避免 Windows 反斜杠误判）
     if (fs.existsSync(secretPath)) {
-      assert.ok(secretPath.includes("server/data"), "JWT 密钥文件应位于 server/data 目录");
+      assert.strictEqual(
+        path.dirname(secretPath),
+        path.resolve("server/data"),
+        "JWT 密钥文件应位于 server/data 目录",
+      );
     }
   });
 
@@ -119,7 +126,7 @@ describe("安全测试", () => {
         bankId: "bank-1",
         questionId: "q1",
         type: "single",
-        title": "越权尝试",
+        title: "越权尝试",
         options: [{ key: "A", content: "A" }, { key: "B", content: "B" }],
         answer: ["A"],
       },
@@ -134,7 +141,7 @@ describe("安全测试", () => {
 
   it("管理员不能将自己降级为非管理员（若为唯一管理员）", async () => {
     // 当前只有 admin 一个管理员，尝试将 admin 降级为 student 应返回 409
-    const { status } = await authedFetch(baseUrl, adminToken, "/api/admin/users/1/role", {
+    const { status } = await authedFetch(baseUrl, adminToken, `/api/admin/users/${adminId}/role`, {
       method: "PATCH",
       body: { role: "student" },
     });

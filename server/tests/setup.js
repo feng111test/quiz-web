@@ -11,6 +11,7 @@ import authRoutes from "../routes/auth.js";
 import adminRoutes from "../routes/admin.js";
 import correctionRoutes from "../routes/corrections.js";
 import feedbackRoutes from "../routes/feedback.js";
+import { hashPassword } from "../auth.js";
 import { db } from "../db.js";
 
 const TABLES = ["users", "corrections", "feedback"];
@@ -62,6 +63,23 @@ export async function loginAs(baseUrl, username, password) {
   });
   const data = await res.json();
   return { status: res.status, token: data.token, user: data.user };
+}
+
+/**
+ * 直接写入指定角色的账号。
+ * 注册接口只会创建学生（防止注册时自选角色提权），
+ * 因此测试里的教师/管理员必须绕过接口、直接落库。
+ */
+export async function createUserWithRole({ username, password, displayName, role }) {
+  const now = Date.now();
+  const passwordHash = await hashPassword(password);
+  const info = db
+    .prepare(
+      `INSERT INTO users (username, displayName, passwordHash, role, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    )
+    .run(username, displayName || username, passwordHash, role, now, now);
+  return Number(info.lastInsertRowid);
 }
 
 /** 注册并返回 token */

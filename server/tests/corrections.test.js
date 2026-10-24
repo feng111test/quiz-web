@@ -5,6 +5,7 @@ import {
   stopTestServer,
   clearDb,
   registerAs,
+  createUserWithRole,
   loginAs,
   authedFetch,
 } from "./setup.js";
@@ -18,10 +19,11 @@ beforeEach(async () => {
   clearDb();
   ({ server, baseUrl } = await startTestServer());
 
-  await registerAs(baseUrl, {
+  await createUserWithRole({
     username: "t_teacher",
     password: "Passw0rd!",
     displayName: "教师",
+    role: "teacher",
   });
   const t = await loginAs(baseUrl, "t_teacher", "Passw0rd!");
   teacherToken = t.token;

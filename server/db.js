@@ -10,6 +10,9 @@ mkdirSync(dataDir, { recursive: true });
 
 export const db = new DatabaseSync(join(dataDir, "quiz.db"));
 
+// 多个进程（如并行测试、备份脚本）同时访问时等待锁而不是立刻报 "database is locked"
+db.exec("PRAGMA busy_timeout = 5000;");
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
