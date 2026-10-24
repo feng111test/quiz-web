@@ -276,6 +276,9 @@ function builtinUrl(path) {
   return new URL(`${import.meta.env.BASE_URL}builtin-data/${path}`, document.baseURI).href;
 }
 
+// bankId -> 分卷文件名：加载成功会删掉 bank.file，失败后靠它把文件名取回来重试
+const builtinFileMap = new Map();
+
 async function loadBuiltinIndex() {
   try {
     const data = await readBuiltinFile(builtinUrl("index.json?v=3"));
@@ -283,16 +286,19 @@ async function loadBuiltinIndex() {
     const list = Array.isArray(data?.banks) ? data.banks : [];
     return list
       .filter((bank) => bank && bank.id && bank.file && Number(bank.questionCount) > 0)
-      .map((bank) => ({
-        id: bank.id,
-        name: bank.name || "2026年高考化学真题",
-        source: "builtin",
-        updatedAt: generatedAt,
-        questionCount: Number(bank.questionCount),
-        typeStat: bank.typeStat || {},
-        file: bank.file,
-        questions: [],
-      }));
+      .map((bank) => {
+        builtinFileMap.set(bank.id, bank.file);
+        return {
+          id: bank.id,
+          name: bank.name || "2026年高考化学真题",
+          source: "builtin",
+          updatedAt: generatedAt,
+          questionCount: Number(bank.questionCount),
+          typeStat: bank.typeStat || {},
+          file: bank.file,
+          questions: [],
+        };
+      });
   } catch (error) {
     console.warn("[题库] 默认高考化学内置题库加载失败", error);
     showToast(`内置真题未加载：${error.message || "请重新运行 npm run dev 后刷新"}`);
